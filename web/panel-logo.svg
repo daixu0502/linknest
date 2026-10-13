@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="栖网">
+<defs><linearGradient id="tile" x2="1" y2="1"><stop stop-color="#12d1d3"/><stop offset=".52" stop-color="#457be7"/><stop offset="1" stop-color="#913be4"/></linearGradient></defs>
+<rect x="2" y="2" width="60" height="60" rx="19" fill="url(#tile)"/>
+<g fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 28 16-12 16 12v18H16z"/><path d="M25 36h14M25 44V28h14v16"/></g>
+</svg>

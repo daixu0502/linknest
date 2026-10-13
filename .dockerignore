@@ -1,0 +1,17 @@
+.git
+data
+test-data
+dist
+bin
+*.exe
+*.tar*
+*.log
+.env
+.env.*
+backups
+linknest-backups
+*.bak
+*.old
+*.tmp
+*.key
+*.pem

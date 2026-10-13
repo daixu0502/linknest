@@ -1,0 +1,19 @@
+/* Shared by the console, dialogs, menus, terminal and public portals.
+   Transparent tracks retain the surface below; do not reserve two gutters. */
+:root{--scroll-thumb:#8995ab88;--scroll-hover:#62738cbb}
+/* Reserve the document gutter even while a dialog locks the body scroll. */
+html{scrollbar-gutter:stable}
+.cards-area,.sidebar,.modal-content,.icon-results,.picker-menu,.picker-options,.source-list,.panel-tabs,.xterm-viewport{scrollbar-gutter:stable}
+@supports not (scrollbar-gutter:stable){html,.cards-area{overflow-y:scroll}}
+html[data-theme=dark]{--scroll-thumb:#a4b3cc66;--scroll-hover:#b8c9e099}
+@media(prefers-color-scheme:dark){html:not([data-theme=light]){--scroll-thumb:#a4b3cc66;--scroll-hover:#b8c9e099}}
+*{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track,*::-webkit-scrollbar-corner{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border:2px solid transparent;background-clip:padding-box;border-radius:20px}
+*::-webkit-scrollbar-thumb:hover{background-color:var(--scroll-hover)}
+/* Chromium's standard properties otherwise override its rounded thumb rules. */
+@supports selector(::-webkit-scrollbar){*{scrollbar-width:auto;scrollbar-color:auto}}
+/* xterm paints a dark viewport in both themes. */
+.xterm-viewport{--scroll-thumb:#a4b3cc66;--scroll-hover:#b8c9e099}
+@media(forced-colors:active){*{scrollbar-color:auto}*::-webkit-scrollbar-thumb{background-color:ButtonText}*::-webkit-scrollbar-track{background:Canvas}}

@@ -1,0 +1,17 @@
+/data/
+/dist/
+/bin/
+/test-data/
+*.exe
+*.tar
+*.tar.gz
+*.log
+/.env
+/.env.*
+/backups/
+/linknest-backups/
+*.bak
+*.old
+*.tmp
+*.key
+*.pem

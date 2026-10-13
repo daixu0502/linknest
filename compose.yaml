@@ -1,0 +1,30 @@
+# Safe preview: only the host's loopback address is published. No firewall permissions.
+services:
+  linknest:
+    image: jacoyyyy/linknest:1.0.0
+    build: .
+    container_name: linknest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:17880:17880"
+    environment:
+      LINKNEST_ADMIN_ADDR: "0.0.0.0:17880"
+      LINKNEST_FIREWALL: "disabled"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m
+    volumes:
+      - linknest-data:/data
+    mem_limit: 192m
+    pids_limit: 128
+    stop_grace_period: 40s
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+volumes:
+  linknest-data:

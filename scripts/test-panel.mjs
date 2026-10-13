@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const icons=fs.readFileSync(new URL('../web/icons.js',import.meta.url),'utf8');
+const ctx={URL,state:{config:{panel:{iconSources:[]}}},document:{addEventListener(){}}};
+vm.createContext(ctx);vm.runInContext(icons,ctx);
+assert.equal(ctx.iconLibrarySources().length,0);
+ctx.state.config.panel.iconSources=null;assert.equal(ctx.iconLibrarySources()[0].id,'iconify');
+const source={kind:'iconify',url:'https://api.iconify.design'};
+assert.equal(ctx.iconSearchResults({icons:['mdi:docker','../bad','x:<svg>']},source,'docker').length,1);
+const json={kind:'json',url:'https://icons.example.com/list.json'};
+const result=ctx.iconSearchResults({icons:[{name:'NAS',url:'./nas.png'},{name:'NAS2',url:'javascript:alert(1)'},{name:'NAS3',url:'https://user:pass@example.com/x'}]},json,'nas');
+assert.equal(result.length,1);assert.equal(result[0].url,'https://icons.example.com/nas.png');
+const selfhst={kind:'selfhst',url:'https://cdn.jsdelivr.net/gh/selfhst/icons@main/index.json'};
+const hd=ctx.iconSearchResults([{Name:'Docker',Reference:'docker',SVG:'Yes',PNG:'Yes',Tags:'containers'},{Name:'NAS',Reference:'nas',PNG:'Yes'},{Name:'Bad',Reference:'../bad',SVG:'Yes'}],selfhst,'');
+assert.equal(hd.length,2);assert.match(hd[0].url,/\/svg\/docker.svg$/);assert.match(hd[1].url,/\/png\/nas.png$/);
+assert.equal(ctx.iconSearchResults([{Name:'Docker',Reference:'docker',SVG:'Yes',Tags:'containers'}],selfhst,'containers').length,1);
+assert.equal(ctx.iconRasterSize(16,16,true).width,256);
+assert.equal(ctx.iconRasterSize(22,16,true).height,186);
+assert.equal(ctx.iconRasterSize(16,16).width,16);
+assert.equal(ctx.iconRasterSize(4096,2048).height,128);
+assert.throws(()=>ctx.iconRasterSize(0,NaN,true));
+assert.throws(()=>ctx.iconSearchResults({},json,''));
+assert.throws(()=>ctx.iconSearchResults({icons:[]},{...json,kind:'bad'},''));
+assert.equal(await ctx.cacheSelectedIcon('/__linknest/icons/'+'a'.repeat(64)+'.png'),'/__linknest/icons/'+'a'.repeat(64)+'.png');
+await assert.rejects(ctx.cacheSelectedIcon('http://example.com/icon.svg'),/HTTPS/);
+const portal=fs.readFileSync(new URL('../web/portal.js',import.meta.url),'utf8');
+const prefs=portal.slice(portal.indexOf('let preferences='),portal.indexOf('function markChoice'));
+for(const value of ['null','"broken"','[]','{}','invalid']){
+ const p={localStorage:{getItem:()=>value,setItem(){}},preferenceKey:'test'};vm.createContext(p);vm.runInContext(prefs,p);p.remember('layout','cards');
+}
+const css=fs.readFileSync(new URL('../web/portal.css',import.meta.url),'utf8');
+const dark=css.match(/html\[data-theme=dark\]\{([^}]+)\}/)[1];
+assert.ok(!dark.includes('--gradient')&&!dark.includes('background:'));
+const html=fs.readFileSync(new URL('../web/portal.html',import.meta.url),'utf8');
+assert.ok(!html.includes('此页面不提供管理后台访问权限'));
+assert.ok(html.includes('panel-logo.svg'));
+console.log('Panel / icon source / local-cache / preferences regression checks passed.');
+
+// The icon field keeps the library beside its input; selecting a cached result
+// fills the URL without replacing the surrounding site form.
+Object.assign(ctx,{esc:String,icon:()=>'',picker:()=>'',toast(){},Event:class{}});
+assert.match(ctx.iconFieldMarkup(''),/icon-input-row.*data-icon-library/);
+assert.match(ctx.iconPickerMarkup(),/id="site-icon-library" hidden/);
+const input={value:'',dispatchEvent(){},focus(){},scrollIntoView(){}},status={},library={hidden:false};
+const trigger={setAttribute(key,value){this[key]=value;}},submit={disabled:false};
+const elements={'[name=icon]':input,'.icon-cache-status':status,'.icon-library':library,'[data-icon-library]':trigger};
+const form={dataset:{},isConnected:true,querySelector:q=>elements[q],querySelectorAll:()=>[submit]};
+const button={disabled:false,closest:()=>form};
+const local='/__linknest/icons/'+'b'.repeat(64)+'.png';
+await ctx.chooseCachedIcon(button,local);
+assert.equal(input.value,local);assert.equal(library.hidden,true);assert.equal(trigger['aria-expanded'],'false');
+assert.equal(submit.disabled,false);assert.equal(form.dataset.iconBusy,undefined);
+assert.match(status.textContent,/持久数据卷/);
+assert.ok(!css.includes('translateY(-2px)'));
+assert.match(css,/transform:scale\(1\.08\) rotate\(-7deg\)/);
+assert.match(css,/\.background-options \.background-grid \.swatch\{[^}]*background:var\(--gradient\)/);
+const adminCSS=fs.readFileSync(new URL('../web/layout-fixes.css',import.meta.url),'utf8');
+assert.match(adminCSS,/\.switch-row:after\{[^}]*order:1[^}]*dashed/);
+assert.match(adminCSS,/\.switch-row>:last-child\{order:2/);
+assert.match(adminCSS,/\.modal-content\{[^}]*overflow-y:auto/);
+assert.match(adminCSS,/\.dialog-footer\{[^}]*flex-shrink:0/);
+console.log('Layout / icon form / hover regression checks passed.');
