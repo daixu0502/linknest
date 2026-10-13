@@ -35,26 +35,6 @@ docker save jacoyyyy/linknest:1.0.0 | gzip > linknest-1.0.0-linux-arm64.tar.gz
 gzip -dc linknest-1.0.0-linux-arm64.tar.gz | docker load
 ```
 
-### 本机试用
-
-```sh
-docker run -d --name linknest \
-  --restart unless-stopped \
-  --cap-drop ALL --security-opt no-new-privileges:true \
-  --read-only --tmpfs /tmp:size=8m \
-  --memory 192m --pids-limit 128 --stop-timeout 40 \
-  --log-opt max-size=5m --log-opt max-file=2 \
-  -p 127.0.0.1:17880:17880 \
-  -e LINKNEST_ADMIN_ADDR=0.0.0.0:17880 \
-  -e LINKNEST_FIREWALL=disabled \
-  -v linknest-data:/data \
-  jacoyyyy/linknest:1.0.0
-```
-
-访问 `http://127.0.0.1:17880`。远程设备可建立隧道：`ssh -N -L 17880:127.0.0.1:17880 -p <SSH端口> root@<设备IP>`。
-
-也可执行 `docker compose up -d --build`，附带配置同样只开放本机管理端口。Compose 数据卷名称带项目名前缀，用 `docker inspect linknest` 查看实际挂载。试用模式只映射管理端口，业务入口需额外映射对应端口，或使用 host 网络。
-
 ### 路由器 / NAS 部署
 
 以下适用于 Linux host 网络与 legacy iptables。将 `192.168.1.1` 替换成真实 LAN IP。无需自动防火墙时，删除两个 `--cap-add`、锁挂载，并将 `LINKNEST_FIREWALL` 改为 `disabled`。
