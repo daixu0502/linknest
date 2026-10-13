@@ -39,4 +39,14 @@ vm.createContext(ipctx);vm.runInContext(workflows.split('\n').find(l=>l.startsWi
 assert.match(ipctx.ddnsRouterAddresses(),/IPv4|IPV4/);assert.match(ipctx.ddnsRouterAddresses(),/2606:4700::1111.*上次检测/);
 ipctx.state={routerIPs:{ipv4:{loading:true},ipv6:{error:'no IPv6'}}};assert.match(ipctx.ddnsRouterAddresses(),/检测中/);assert.match(ipctx.ddnsRouterAddresses(),/未获取/);
 assert.ok(workflows.includes("btn('恢复所有提示','notice-restore'"));
+assert.match(workflows, /panel-body help-preferences/);
+assert.match(workflows, /help-preferences"><p class="split-note"/);
+assert.match(workflows, /settings-card-actions">\$\{btn\('恢复所有提示'/);
+const css=fs.readFileSync(new URL('../web/layout-fixes.css',import.meta.url),'utf8');
+assert.match(css,/\.ddns-router-ips\{display:flex;align-items:baseline;flex-wrap:wrap/);
+assert.match(css,/\.ddns-summary\{display:flex;align-items:baseline/);
+assert.match(css,/\.ddns-router-ips\{display:grid;gap:8px;width:100%/);
+assert.match(css,/\.settings-card-actions\{[^}]*margin-top:auto/);
+assert.match(css,/\.settings-grid>\.panel>\.panel-body\{flex:1\}/);
+assert.match(css,/\.help-preferences>\.split-note\{[^}]*font-size:12px/);
 console.log('Help dismissal / persistence / restore / storage failures / service state / router IP regressions passed.');
