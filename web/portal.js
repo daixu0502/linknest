@@ -15,10 +15,18 @@ function remember(key,value){preferences[key]=value;try{localStorage.setItem(pre
 function markChoice(selector,key,value){document.querySelectorAll(selector).forEach(b=>b.setAttribute('aria-pressed',String(b.dataset[key]===value)));}
 function setLayout(value){if(!layouts[value])value='cards';root.dataset.layout=value;const label=document.querySelector('#layout-label');if(label)label.textContent=layouts[value];markChoice('button[data-layout]','layout',value);}
 function setBackground(value){root.dataset.background=backgrounds.includes(value)?value:'aurora';markChoice('button[data-background]','background',root.dataset.background);}
+function setCardMotion(value){
+ root.dataset.cardMotion=['auto','on','off'].includes(value)?value:'auto';
+ markChoice('button[data-card-motion]','cardMotion',root.dataset.cardMotion);
+ const status=document.querySelector('#card-motion-status');
+ if(status)status.textContent=root.dataset.cardMotion==='on'?'已开启图标旋转，仅影响当前浏览器。':root.dataset.cardMotion==='off'?'图标旋转已关闭，保留卡片高亮。':matchMedia('(prefers-reduced-motion:reduce)').matches?'系统已减少动态效果，图标不旋转；可手动选择开启。':'跟随系统，鼠标悬停时图标轻微旋转。';
+}
 const webSearch=document.querySelector('#web-search');
 function setEngine(value){if(!engines[value])value='bing';if(webSearch)webSearch.dataset.engine=value;const label=document.querySelector('#engine-label');if(label)label.textContent=engines[value][0];markChoice('button[data-engine]','engine',value);}
 setLayout(layouts[preferences.layout]?preferences.layout:root.dataset.layout);
 setBackground(backgrounds.includes(preferences.background)?preferences.background:root.dataset.background);
+setCardMotion(preferences.cardMotion);
+matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',()=>setCardMotion(root.dataset.cardMotion));
 setEngine(engines[preferences.engine]?preferences.engine:webSearch?.dataset.engine);
 if(['dark','light'].includes(preferences.theme))root.dataset.theme=preferences.theme;
 markChoice('button[data-network]','network',root.dataset.network);
@@ -39,6 +47,7 @@ document.addEventListener('click',e=>{
  const b=e.target.closest('button');if(!b)return;
  if(b.dataset.layout){setLayout(b.dataset.layout);remember('layout',b.dataset.layout);}
  else if(b.dataset.background){setBackground(b.dataset.background);remember('background',b.dataset.background);}
+ else if(b.dataset.cardMotion){setCardMotion(b.dataset.cardMotion);remember('cardMotion',b.dataset.cardMotion);}
  else if(b.dataset.engine){setEngine(b.dataset.engine);remember('engine',b.dataset.engine);}
  else if(b.dataset.network){const url=new URL(location.href);url.searchParams.set('network',b.dataset.network);location.assign(url.href);}
  else return;

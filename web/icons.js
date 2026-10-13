@@ -31,8 +31,7 @@ function iconFieldMarkup(value='',source=''){
 }
 function iconSourcesPage(){
  const sources=iconLibrarySources();
- return
- panel('图标源','支持 Iconify、selfh.st 与自定义 JSON 图标目录',sources.map(source=>`<article class="source-item"><div><strong>${esc(source.name)}</strong><small>${esc(iconSourceNames[source.kind]||source.kind)} · ${esc(source.url)}</small></div><div class="actions">${ibtn('编辑图标源','icon-source-edit:'+source.id,'edit')}${btn(source.disabled?'启用':'停用','icon-source-toggle:'+source.id)}${ibtn('删除图标源','icon-source-delete:'+source.id,'trash')}</div></article>`).join('')||empty('没有图标源','添加图标源后，可在编辑站点时搜索并选择。'),`<div class="actions">${!sources.some(s=>s.kind==='selfhst')?btn('添加 selfh.st 默认源','icon-source-default'):''}${btn('添加图标源','icon-source-add','plus')}</div>`)+
+ return panel('图标源','支持 Iconify、selfh.st 与自定义 JSON 图标目录',sources.map(source=>`<article class="source-item"><div><strong>${esc(source.name)}</strong><small>${esc(iconSourceNames[source.kind]||source.kind)} · ${esc(source.url)}</small></div><div class="actions">${ibtn('编辑图标源','icon-source-edit:'+source.id,'edit')}${btn(source.disabled?'启用':'停用','icon-source-toggle:'+source.id)}${ibtn('删除图标源','icon-source-delete:'+source.id,'trash')}</div></article>`).join('')||empty('没有图标源','添加图标源后，可在编辑站点时搜索并选择。'),`<div class="actions">${!sources.some(s=>s.kind==='selfhst')?btn('添加 selfh.st 默认源','icon-source-default'):''}${btn('添加图标源','icon-source-add','plus')}</div>`)+
  panel('自定义 JSON 格式','源需启用 CORS，并通过 HTTPS 返回 JSON；最多读取 2 MiB',`<div class="panel-body"><pre class="code">${esc(JSON.stringify({icons:[{name:'我的服务',url:'https://icons.example.com/service.svg',keywords:['nas','存储']}]},null,2))}</pre><p class="split-note">支持相对于 JSON 地址的图片路径。只作为图片引用，不执行 SVG 脚本。选中的图标转换为 PNG 存入 /data/icons/；升级或重建容器保留数据卷即可保留图标，停用或删除图标源不影响显示。手填外链需单独点击保存到本地。</p></div>`);
 }
 async function iconSourceAction(key){

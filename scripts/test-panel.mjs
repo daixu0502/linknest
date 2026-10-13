@@ -4,8 +4,15 @@ import vm from 'node:vm';
 const icons=fs.readFileSync(new URL('../web/icons.js',import.meta.url),'utf8');
 const ctx={URL,state:{config:{panel:{iconSources:[]}}},document:{addEventListener(){}}};
 vm.createContext(ctx);vm.runInContext(icons,ctx);
+Object.assign(ctx,{esc:String,panel:(title,sub,body,extra='')=>`<section>${title}${sub}${body}${extra}</section>`,btn:label=>`<button>${label}</button>`,ibtn:label=>`<button>${label}</button>`,empty:(title,desc)=>title+desc});
+assert.equal(typeof ctx.iconSourcesPage(),'string');
+assert.match(ctx.iconSourcesPage(),/没有图标源/);
+assert.match(ctx.iconSourcesPage(),/自定义 JSON 格式/);
 assert.equal(ctx.iconLibrarySources().length,0);
 ctx.state.config.panel.iconSources=null;assert.equal(ctx.iconLibrarySources()[0].id,'iconify');
+assert.match(ctx.iconSourcesPage(),/Iconify 矢量图标库/);
+assert.match(ctx.iconSourcesPage(),/selfh.st 自托管应用图标/);
+assert.doesNotMatch(ctx.iconSourcesPage(),/undefined/);
 const source={kind:'iconify',url:'https://api.iconify.design'};
 assert.equal(ctx.iconSearchResults({icons:['mdi:docker','../bad','x:<svg>']},source,'docker').length,1);
 const json={kind:'json',url:'https://icons.example.com/list.json'};
@@ -54,6 +61,18 @@ assert.equal(submit.disabled,false);assert.equal(form.dataset.iconBusy,undefined
 assert.match(status.textContent,/持久数据卷/);
 assert.ok(!css.includes('translateY(-2px)'));
 assert.match(css,/transform:scale\(1\.08\) rotate\(-7deg\)/);
+assert.match(css,/@media\(any-hover:hover\) and \(any-pointer:fine\)/);
+assert.match(css,/html\[data-card-motion=off\].*transform:none/);
+assert.match(css,/html\[data-card-motion=on\].*transition:transform .18s ease!important/);
+assert.match(css,/prefers-reduced-motion:reduce.*html:not\(\[data-card-motion=on\]\)/);
+const motionFunction=portal.slice(portal.indexOf('function setCardMotion('),portal.indexOf('const webSearch='));
+for(const reduced of [true,false]){
+ const status={},chosen=[],m={root:{dataset:{}},document:{querySelector:()=>status},markChoice:(selector,key,value)=>chosen.push(value),matchMedia:()=>({matches:reduced})};vm.createContext(m);vm.runInContext(motionFunction,m);
+ m.setCardMotion('bad');assert.equal(m.root.dataset.cardMotion,'auto');assert.match(status.textContent,reduced?/系统已减少/:/跟随系统/);
+ m.setCardMotion('on');assert.equal(m.root.dataset.cardMotion,'on');assert.match(status.textContent,/已开启/);
+ m.setCardMotion('off');assert.equal(m.root.dataset.cardMotion,'off');assert.match(status.textContent,/已关闭/);
+}
+assert.match(html,/data-card-motion="on"/);assert.match(portal,/remember\('cardMotion',b.dataset.cardMotion\)/);
 assert.match(css,/\.background-options \.background-grid \.swatch\{[^}]*background:var\(--gradient\)/);
 const adminCSS=fs.readFileSync(new URL('../web/layout-fixes.css',import.meta.url),'utf8');
 assert.match(adminCSS,/\.switch-row:after\{[^}]*order:1[^}]*dashed/);

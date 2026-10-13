@@ -4,9 +4,11 @@
 
 LinkNest 是单容器网络服务控制台，提供反向代理、TCP / UDP 端口转发、阿里云动态域名与证书申请、轻面板、网络唤醒、访问过滤和 SSH Web 终端。
 
-当前版本 **1.0.1**，发布镜像支持 **Linux ARM64**，适用于 ARM64 NAS / 路由器；其他架构可自行构建。前端为内嵌 HTML / CSS / JavaScript，无需 Node 构建。第三方资源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+当前版本 **1.0.2**，发布镜像支持 **Linux ARM64**，适用于 ARM64 NAS / 路由器；其他架构可自行构建。前端为内嵌 HTML / CSS / JavaScript，无需 Node 构建。第三方资源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
 本项目尚未经独立安全审计，管理入口建议仅在受信局域网或 SSH 隧道中访问。自动封禁与名单订阅默认关闭，详见 [访问过滤](docs/access-filter.md)。
+
+轻面板右上角「选择背景」菜单可设置卡片动效：默认跟随系统；系统关闭动画时，可为当前浏览器单独选择「开启」，不修改 Windows 设置。选择保存在当前浏览器中。
 
 ## 如何构建、导入与使用
 
@@ -15,13 +17,13 @@ LinkNest 是单容器网络服务控制台，提供反向代理、TCP / UDP 端�
 从 Docker Hub 拉取（Linux ARM64）：
 
 ```sh
-docker pull jacoyyyy/linknest:1.0.1
+docker pull jacoyyyy/linknest:1.0.2
 ```
 
 在源码目录构建，默认构建宿主机架构，期间执行 Go 测试：
 
 ```sh
-docker build -t jacoyyyy/linknest:1.0.1 .
+docker build -t jacoyyyy/linknest:1.0.2 .
 ```
 
 依赖下载困难时可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。源码测试方法见 [测试说明](docs/testing.md)。
@@ -30,9 +32,9 @@ docker build -t jacoyyyy/linknest:1.0.1 .
 
 ```sh
 # 在已有镜像的设备上导出
-docker save jacoyyyy/linknest:1.0.1 | gzip > linknest-1.0.1-linux-arm64.tar.gz
+docker save jacoyyyy/linknest:1.0.2 | gzip > linknest-1.0.2-linux-arm64.tar.gz
 # 复制到另一台 ARM64 设备后导入
-gzip -dc linknest-1.0.1-linux-arm64.tar.gz | docker load
+gzip -dc linknest-1.0.2-linux-arm64.tar.gz | docker load
 ```
 
 ### 路由器 / NAS 部署
@@ -52,7 +54,7 @@ docker run -d --name linknest \
   -e LINKNEST_FIREWALL=enabled \
   --mount type=bind,source=/run/xtables.lock,target=/run/xtables.lock \
   -v linknest-data:/data \
-  jacoyyyy/linknest:1.0.1
+  jacoyyyy/linknest:1.0.2
 ```
 
 自动放行与内核转发需要较高网络权限，仅管理 LinkNest 自有规则，不清空宿主防火墙；不需要独立权限助手。不要使用 `--privileged` 或挂载 Docker Socket。WOL 广播建议使用 host 网络；公网可达仍取决于上级路由、运营商和防火墙。
@@ -113,7 +115,7 @@ docker stop linknest
 docker run --rm --network none --entrypoint tar \
   -v linknest-data:/data:ro \
   --mount "type=bind,source=$(pwd)/linknest-backups,target=/backup" \
-  jacoyyyy/linknest:1.0.1 -czf /backup/linknest-data.tar.gz -C /data .
+  jacoyyyy/linknest:1.0.2 -czf /backup/linknest-data.tar.gz -C /data .
 docker start linknest
 ```
 
