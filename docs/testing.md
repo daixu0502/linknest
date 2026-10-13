@@ -1,4 +1,4 @@
-# LinkNest 1.0.2 测试
+# LinkNest 1.0.3 测试
 
 ## 运行
 
@@ -10,6 +10,7 @@ node scripts/test-workflows.mjs
 node scripts/test-panel.mjs
 node scripts/test-security.mjs
 node scripts/test-twofactor.mjs
+node scripts/test-notices.mjs
 go build -trimpath -o bin/linknest ./cmd/linknest
 ```
 
@@ -21,6 +22,8 @@ go build -trimpath -o bin/linknest ./cmd/linknest
 - 两步验证：RFC 6238 向量、本地二维码、密码单独不能登录、时钟偏差与防重放、一次性恢复码及并发消费、绑定有效期 / 会话限制、限流、重启与账号变更保留、恢复码轮换与关闭、密钥缺失拒绝启动、分步弹窗切换。
 - 共享端口域名路由、TLS、HTTP 跳转、来源适配、TCP/UDP、内核 NAT 自有链边界。
 - DDNS 类型、删除远端确认、更新与凭据；证书长期任务及保护。
+- 路由器公网 IPv4 / IPv6 非阻塞读取、单次共享刷新、冷却、独立失败与旧值标记；服务状态文案统一。
+- 说明提示会话隐藏、持久不提示、恢复仅清理自身设置、存储不可用降级；故障警告不可隐藏。
 - 轻面板、图标缓存、WOL、SSH 指纹确认、终端；前端布局 / 滚动 / 登录语义。
 - 异常响应时间窗、阈值、白名单、内网豁免、IPv6、到期解封、单独解封 / 清空自动记录、保存及重启恢复。
 - 不信任 X-Forwarded-For；代理 404 达阈值后的拒绝，WebSocket / 流式响应保留。

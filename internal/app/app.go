@@ -48,6 +48,7 @@ type Event struct {
 }
 type App struct {
 	iconMu           sync.Mutex
+	routerIPs        routerIPCache
 	mu               sync.Mutex
 	updateMu         sync.Mutex
 	store            *Store
@@ -466,7 +467,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		username := a.auth.Username
 		twoFactor := twoFactorState(a.auth)
 		a.mu.Unlock()
-		respond(w, 200, map[string]any{"ok": true, "version": version, "config": c, "username": username, "twoFactor": twoFactor, "dnsSecretSet": hasSecret, "credentialFlags": credentialFlags, "interfaces": interfaces(), "rules": a.engine.statuses(), "firewall": a.engine.fw.get(), "ddns": a.dns.status(), "certificates": a.certs.list(), "certificateTasks": a.certs.tasks(), "certificateJobs": a.certs.status(), "events": events, "adminAddress": a.admin, "adminTlsStatus": a.adminTLSStatus()})
+		respond(w, 200, map[string]any{"ok": true, "version": version, "config": c, "username": username, "twoFactor": twoFactor, "dnsSecretSet": hasSecret, "credentialFlags": credentialFlags, "interfaces": interfaces(), "routerIPs": a.routerIPs.snapshot(), "rules": a.engine.statuses(), "firewall": a.engine.fw.get(), "ddns": a.dns.status(), "certificates": a.certs.list(), "certificateTasks": a.certs.tasks(), "certificateJobs": a.certs.status(), "events": events, "adminAddress": a.admin, "adminTlsStatus": a.adminTLSStatus()})
 		return
 	}
 	if p == "/api/config" && r.Method == "PUT" {
