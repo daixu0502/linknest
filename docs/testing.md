@@ -1,4 +1,4 @@
-# LinkNest 1.0.0 测试
+# LinkNest 1.0.1 测试
 
 ## 运行
 
@@ -9,6 +9,7 @@ node scripts/test-ui.mjs
 node scripts/test-workflows.mjs
 node scripts/test-panel.mjs
 node scripts/test-security.mjs
+node scripts/test-twofactor.mjs
 go build -trimpath -o bin/linknest ./cmd/linknest
 ```
 
@@ -17,6 +18,7 @@ go build -trimpath -o bin/linknest ./cmd/linknest
 ## 自动回归范围
 
 - 旧配置迁移、加密密钥、账户、HTTPS 会话与 CSRF。
+- 两步验证：RFC 6238 向量、本地二维码、密码单独不能登录、时钟偏差与防重放、一次性恢复码及并发消费、绑定有效期 / 会话限制、限流、重启与账号变更保留、恢复码轮换与关闭、密钥缺失拒绝启动、分步弹窗切换。
 - 共享端口域名路由、TLS、HTTP 跳转、来源适配、TCP/UDP、内核 NAT 自有链边界。
 - DDNS 类型、删除远端确认、更新与凭据；证书长期任务及保护。
 - 轻面板、图标缓存、WOL、SSH 指纹确认、终端；前端布局 / 滚动 / 登录语义。

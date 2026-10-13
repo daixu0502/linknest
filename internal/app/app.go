@@ -29,8 +29,9 @@ import (
 var assets = web.Files
 
 type authConfig struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"passwordHash"`
+	Username     string           `json:"username"`
+	PasswordHash string           `json:"passwordHash"`
+	TwoFactor    *twoFactorConfig `json:"twoFactor,omitempty"`
 }
 type session struct {
 	expires time.Time
@@ -46,20 +47,21 @@ type Event struct {
 	Message string `json:"message"`
 }
 type App struct {
-	iconMu        sync.Mutex
-	mu            sync.Mutex
-	updateMu      sync.Mutex
-	store         *Store
-	engine        *Engine
-	dns           *DNSManager
-	certs         *CertManager
-	auth          authConfig
-	bootstrap     string
-	sessions      map[string]session
-	failures      map[string]attempt
-	events        []Event
-	admin         string
-	terminalSlots chan struct{}
+	iconMu           sync.Mutex
+	mu               sync.Mutex
+	updateMu         sync.Mutex
+	store            *Store
+	engine           *Engine
+	dns              *DNSManager
+	certs            *CertManager
+	auth             authConfig
+	bootstrap        string
+	sessions         map[string]session
+	failures         map[string]attempt
+	events           []Event
+	admin            string
+	terminalSlots    chan struct{}
+	twoFactorPending *twoFactorEnrollment
 }
 
 func (a *App) event(level, message string) {
@@ -95,6 +97,9 @@ func newApp(dir, addr string, firewall bool) (*App, error) {
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return nil, e
+	}
+	if err := a.validateTwoFactor(); err != nil {
+		return nil, err
 	}
 	if a.auth.PasswordHash != "" && a.auth.Username == "" {
 		// Upgrade old password-only installations without changing the password.
@@ -304,6 +309,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if !decode(w, r, &q) {
 		return
@@ -339,29 +345,60 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "用户名或密码不正确")
 		return
 	}
-	id := token(32)
 	a.mu.Lock()
-	delete(a.failures, ip)
+	defer a.mu.Unlock()
+	// Recheck after bcrypt: a concurrent account change must not mint a session.
+	if a.auth.PasswordHash != hash || a.auth.Username != username {
+		fail(w, 401, "账号已变更，请重新登录")
+		return
+	}
+	if at := a.failures[ip]; at.n >= 6 && time.Now().Before(at.until) {
+		fail(w, 429, "登录尝试过多，请 5 分钟后重试")
+		return
+	}
 	for k, v := range a.sessions {
 		if time.Now().After(v.expires) {
 			delete(a.sessions, k)
 		}
 	}
 	if len(a.sessions) >= 32 {
-		a.mu.Unlock()
 		fail(w, 429, "登录会话过多，请先退出其他会话")
 		return
 	}
+	if a.auth.TwoFactor != nil {
+		if strings.TrimSpace(q.Code) == "" {
+			respond(w, 200, map[string]any{"ok": true, "twoFactorRequired": true})
+			return
+		}
+		next := a.auth
+		if !a.consumeSecondFactor(&next, q.Code, now) {
+			at = a.failures[ip]
+			at.n++
+			at.until = time.Now().Add(5 * time.Minute)
+			a.failures[ip] = at
+			fail(w, 401, "动态验证码或恢复码无效、已使用或已过期")
+			return
+		}
+		if err := a.saveAuthLocked(next); err != nil {
+			fail(w, 500, "无法保存验证状态，请稍后重试")
+			return
+		}
+	}
+	id := token(32)
+	delete(a.failures, ip)
 	if previous, err := r.Cookie(adminCookieName(r)); err == nil {
 		delete(a.sessions, previous.Value)
 	}
 	a.sessions[id] = session{expires: time.Now().Add(8 * time.Hour), secure: r.TLS != nil}
-	a.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: adminCookieName(r), Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: 28800})
 	respond(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
+	if strings.HasPrefix(p, "/api/2fa/") {
+		a.twoFactorAPI(w, r)
+		return
+	}
 	if strings.HasPrefix(p, "/api/access/") {
 		a.accessAPI(w, r)
 		return
@@ -375,14 +412,15 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			CurrentPassword string `json:"currentPassword"`
 			NewPassword     string `json:"newPassword"`
 			Username        string `json:"username"`
+			Code            string `json:"code"`
 		}
 		if !decode(w, r, &q) {
 			return
 		}
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if bcrypt.CompareHashAndPassword([]byte(a.auth.PasswordHash), []byte(q.CurrentPassword)) != nil {
-			fail(w, 403, "当前密码不正确")
+		auth := a.auth
+		if !a.securityProofLocked(w, r, &auth, q.CurrentPassword, q.Code, true) {
 			return
 		}
 		username := a.auth.Username
@@ -406,7 +444,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		auth := authConfig{Username: username, PasswordHash: string(hash)}
+		auth.Username, auth.PasswordHash = username, string(hash)
 		data, _ := json.Marshal(auth)
 		if writeAtomic(filepath.Join(a.store.dir, "auth.json"), data) != nil {
 			fail(w, 500, "无法保存密码")
@@ -414,6 +452,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 		a.auth = auth
 		a.sessions = map[string]session{}
+		a.twoFactorPending = nil
 		clearAdminCookie(w, r)
 		respond(w, 200, map[string]bool{"ok": true})
 		return
@@ -425,8 +464,9 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()
 		events := append([]Event{}, a.events...)
 		username := a.auth.Username
+		twoFactor := twoFactorState(a.auth)
 		a.mu.Unlock()
-		respond(w, 200, map[string]any{"ok": true, "version": version, "config": c, "username": username, "dnsSecretSet": hasSecret, "credentialFlags": credentialFlags, "interfaces": interfaces(), "rules": a.engine.statuses(), "firewall": a.engine.fw.get(), "ddns": a.dns.status(), "certificates": a.certs.list(), "certificateTasks": a.certs.tasks(), "certificateJobs": a.certs.status(), "events": events, "adminAddress": a.admin, "adminTlsStatus": a.adminTLSStatus()})
+		respond(w, 200, map[string]any{"ok": true, "version": version, "config": c, "username": username, "twoFactor": twoFactor, "dnsSecretSet": hasSecret, "credentialFlags": credentialFlags, "interfaces": interfaces(), "rules": a.engine.statuses(), "firewall": a.engine.fw.get(), "ddns": a.dns.status(), "certificates": a.certs.list(), "certificateTasks": a.certs.tasks(), "certificateJobs": a.certs.status(), "events": events, "adminAddress": a.admin, "adminTlsStatus": a.adminTLSStatus()})
 		return
 	}
 	if p == "/api/config" && r.Method == "PUT" {

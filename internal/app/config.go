@@ -21,7 +21,7 @@ import (
 	"sync"
 )
 
-const version = "1.0.0"
+const version = "1.0.1"
 const configSchema = 4
 
 type Rule struct {
@@ -181,6 +181,9 @@ func newStore(dir string) (*Store, error) {
 	kp := filepath.Join(dir, "master.key")
 	b, err := os.ReadFile(kp)
 	if errors.Is(err, os.ErrNotExist) {
+		if auth, e := os.ReadFile(filepath.Join(dir, "auth.json")); e == nil && strings.Contains(string(auth), "enc:") {
+			return nil, errors.New("已有加密两步验证密钥，但 master.key 缺失；请恢复原密钥")
+		}
 		metas, _ := filepath.Glob(filepath.Join(dir, "certificates", "*.renew.json"))
 		for _, p := range metas {
 			if b, e := os.ReadFile(p); e == nil && strings.Contains(string(b), "enc:") {

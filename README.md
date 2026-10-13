@@ -4,7 +4,7 @@
 
 LinkNest 是单容器网络服务控制台，提供反向代理、TCP / UDP 端口转发、阿里云动态域名与证书申请、轻面板、网络唤醒、访问过滤和 SSH Web 终端。
 
-当前版本 **1.0.0**，发布镜像支持 **Linux ARM64**，适用于 ARM64 NAS / 路由器；其他架构可自行构建。前端为内嵌 HTML / CSS / JavaScript，无需 Node 构建。第三方资源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+当前版本 **1.0.1**，发布镜像支持 **Linux ARM64**，适用于 ARM64 NAS / 路由器；其他架构可自行构建。前端为内嵌 HTML / CSS / JavaScript，无需 Node 构建。第三方资源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
 本项目尚未经独立安全审计，管理入口建议仅在受信局域网或 SSH 隧道中访问。自动封禁与名单订阅默认关闭，详见 [访问过滤](docs/access-filter.md)。
 
@@ -15,13 +15,13 @@ LinkNest 是单容器网络服务控制台，提供反向代理、TCP / UDP 端�
 从 Docker Hub 拉取（Linux ARM64）：
 
 ```sh
-docker pull jacoyyyy/linknest:1.0.0
+docker pull jacoyyyy/linknest:1.0.1
 ```
 
 在源码目录构建，默认构建宿主机架构，期间执行 Go 测试：
 
 ```sh
-docker build -t jacoyyyy/linknest:1.0.0 .
+docker build -t jacoyyyy/linknest:1.0.1 .
 ```
 
 依赖下载困难时可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。源码测试方法见 [测试说明](docs/testing.md)。
@@ -30,9 +30,9 @@ docker build -t jacoyyyy/linknest:1.0.0 .
 
 ```sh
 # 在已有镜像的设备上导出
-docker save jacoyyyy/linknest:1.0.0 | gzip > linknest-1.0.0-linux-arm64.tar.gz
+docker save jacoyyyy/linknest:1.0.1 | gzip > linknest-1.0.1-linux-arm64.tar.gz
 # 复制到另一台 ARM64 设备后导入
-gzip -dc linknest-1.0.0-linux-arm64.tar.gz | docker load
+gzip -dc linknest-1.0.1-linux-arm64.tar.gz | docker load
 ```
 
 ### 路由器 / NAS 部署
@@ -52,7 +52,7 @@ docker run -d --name linknest \
   -e LINKNEST_FIREWALL=enabled \
   --mount type=bind,source=/run/xtables.lock,target=/run/xtables.lock \
   -v linknest-data:/data \
-  jacoyyyy/linknest:1.0.0
+  jacoyyyy/linknest:1.0.1
 ```
 
 自动放行与内核转发需要较高网络权限，仅管理 LinkNest 自有规则，不清空宿主防火墙；不需要独立权限助手。不要使用 `--privileged` 或挂载 Docker Socket。WOL 广播建议使用 host 网络；公网可达仍取决于上级路由、运营商和防火墙。
@@ -64,6 +64,8 @@ docker exec linknest cat /data/bootstrap.token
 ```
 
 在页面输入口令，创建管理员用户名与 12—72 字节密码；没有默认账号密码，初始化后口令文件删除。随后配置业务规则、DNS 凭据和证书。管理 HTTPS 需在设置中选择有效证书并开启，不会在申请成功后自动开启。
+
+两步验证可在「设置 → 两步验证（2FA）」开启。验证管理员密码后，用 Microsoft Authenticator 添加「其他账户」扫描本地生成的二维码，再输入 6 位动态验证码确认。启用前不会改变登录方式。请保存仅显示一次的 10 个恢复码；丢失手机时，使用账号、密码与一个恢复码登录，再关闭或重新绑定。恢复码只能使用一次，也可在设置中重新生成；验证码同一轮不可重复使用，手机与服务器需自动同步时间。建议通过 HTTPS 或 SSH 隧道绑定。启用后不要降级到不支持 2FA 的旧程序，否则旧程序不会要求动态验证码。
 
 升级前备份，拉取新镜像后用原参数重建容器，保留原数据卷。同名容器需先停止并移除；**不要删除数据卷**。
 
@@ -93,7 +95,7 @@ THIRD_PARTY.md      第三方资源与许可说明
 /data/
   config.json           规则与加密凭据
   master.key            解密密钥，必须随配置备份
-  auth.json             管理账号与密码哈希
+  auth.json             管理账号、密码哈希、加密 2FA 密钥与恢复码哈希
   bootstrap.token       仅初始化前存在
   access/               封禁状态、名单缓存与更新状态
   icons/                已选择的本地图标缓存
@@ -111,7 +113,7 @@ docker stop linknest
 docker run --rm --network none --entrypoint tar \
   -v linknest-data:/data:ro \
   --mount "type=bind,source=$(pwd)/linknest-backups,target=/backup" \
-  jacoyyyy/linknest:1.0.0 -czf /backup/linknest-data.tar.gz -C /data .
+  jacoyyyy/linknest:1.0.1 -czf /backup/linknest-data.tar.gz -C /data .
 docker start linknest
 ```
 

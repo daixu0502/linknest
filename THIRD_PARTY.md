@@ -8,6 +8,7 @@
 - golang.org/x/crypto v0.48.0（ACME、SSH、bcrypt）：BSD-3-Clause。
 - golang.org/x/sys v0.41.0（间接依赖）：BSD-3-Clause。
 - github.com/gorilla/websocket v1.5.3：BSD-2-Clause。
+- github.com/skip2/go-qrcode：MIT；本地生成两步验证二维码，不调用外部二维码服务。版本锁定在 go.mod / go.sum。
 - @xterm/xterm 5.5.0：MIT；静态资源来自 npm 官方发布包，许可证见 `web/vendor/LICENSE`。
 - Debian bookworm、iptables、ca-certificates、tzdata：随镜像发行的许可证位于 `/usr/share/doc/*/copyright`。
 
