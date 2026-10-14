@@ -14,13 +14,36 @@ assert.ok(!html.includes('快捷操作'));assert.ok(html.includes('safe &lt;even
 for(const name of ['services','security','activity'])assert.ok(html.includes('panel overview-'+name));
 assert.match(css,/grid-template-areas:"services security" "activity activity"/);
 assert.match(css,/@media\(max-width:1050px\)/);
-assert.match(css,/\.modal-content \.picker-menu\{position:static;[^}]*max-height:min\(210px,35dvh\)/);
-const pickerCtx={};vm.createContext(pickerCtx);vm.runInContext(line('revealPickerMenu'),pickerCtx);
-for(const [top,bottom,expected] of [[140,270,48],[120,230,30],[90,170,12]]){
- const body={scrollTop:30,getBoundingClientRect:()=>({top:100,bottom:260})};
- pickerCtx.revealPickerMenu({closest:()=>body,getBoundingClientRect:()=>({top,bottom})});assert.equal(body.scrollTop,expected);
+assert.match(css,/\.picker-menu\.picker-floating\{position:fixed/);
+assert.ok(!css.includes('position:static'));
+const pickerCtx={};vm.createContext(pickerCtx);vm.runInContext(line('pickerPlacement'),pickerCtx);
+const bounds={left:0,top:100,right:600,bottom:500};
+for(const anchor of [{left:30,top:130,bottom:170,width:240},{left:330,top:420,bottom:460,width:240},{left:560,top:300,bottom:340,width:240}]){
+ const pos=pickerCtx.pickerPlacement(anchor,bounds,300);
+ assert.ok(pos.top>=bounds.top+8);assert.ok(pos.top+pos.maxHeight<=bounds.bottom-8);
+ assert.ok(pos.left>=bounds.left+8);assert.ok(pos.left+pos.width<=bounds.right-8);
+ assert.ok(pos.maxHeight<=210);
 }
-pickerCtx.revealPickerMenu({closest:()=>null});
+assert.ok(pickerCtx.pickerPlacement({left:30,top:420,bottom:460,width:240},bounds,300).top<420);
+assert.match(app,/host\.append\(menu\)/);assert.match(app,/owner\.append\(menu\)/);
+assert.match(app,/modal\.addEventListener\('close',\(\)=>closePicker\(\)\)/);
+assert.match(app,/if\(e.key==='Tab'\)\{closePicker\(true\)/);
+assert.ok(!app.includes('revealPickerMenu'));
+// Opening portals only the menu; closing restores its owner before selection,
+// dialog teardown or a page redraw. No form scrolling / dimensions are mutated.
+for(const inDialog of [false,true]){
+ const classes=new Set(),attrs={},input={value:'old'};
+ const selected={offsetTop:10,focus(o){assert.equal(o.preventScroll,true);}};
+ const menu={hidden:true,style:{},scrollHeight:300,clientHeight:150,classList:{add:x=>classes.add(x),remove:x=>classes.delete(x)},removeAttribute(x){assert.equal(x,'style');this.style={};},querySelector:()=>selected};
+ const owner={append(m){assert.equal(m,menu);m.parentNode=this;},querySelector:s=>s==='.picker-menu'?menu:input};
+ const host={append(m){assert.equal(m,menu);m.parentNode=this;},getBoundingClientRect:()=>({left:20,top:100,right:600,bottom:500})};
+ const trigger={isConnected:true,closest:s=>s==='.picker'?owner:inDialog?host:null,setAttribute(k,v){attrs[k]=v;},getBoundingClientRect:()=>({left:40,top:420,bottom:460,width:240}),focus(o){assert.equal(o.preventScroll,true);}};
+ const c={window:{},document:{body:host},innerWidth:800,innerHeight:600,$:(s,r)=>r.querySelector(s)};
+ vm.createContext(c);vm.runInContext('let activePicker=null;\n'+['pickerPlacement','closePicker','openPicker'].map(line).join('\n'),c);
+ c.openPicker(trigger);assert.equal(menu.parentNode,host);assert.equal(menu.hidden,false);assert.equal(attrs['aria-expanded'],'true');assert.equal(menu.style.width,'240px');assert.equal(classes.has('picker-floating'),true);
+ c.closePicker(true);assert.equal(menu.parentNode,owner);assert.equal(menu.hidden,true);assert.equal(attrs['aria-expanded'],'false');assert.equal(classes.size,0);assert.deepEqual(menu.style,{});
+ c.closePicker();c.openPicker(trigger);c.openPicker(trigger);c.closePicker();assert.equal(menu.parentNode,owner);
+}
 assert.match(css,/\.icon-button\.refresh-button\{border-radius:50%/);
 assert.match(css,/\.refresh-button\.is-loading \.icon\{animation:spin/);
 assert.match(css,/@media\(prefers-reduced-motion:reduce\)/);

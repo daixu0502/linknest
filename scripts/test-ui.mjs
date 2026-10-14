@@ -60,7 +60,7 @@ console.log('Immediate setting save/failure and hash routing regressions passed.
 const authSource=source.slice(source.indexOf('function renderAuth('),source.indexOf('\nfunction render()'));
 for(const initialized of [false,true]){
  const elements={'#app':{},'#auth-form':{}};
- const ctx={$:s=>elements[s],field:(name,label,value,hint)=>`<label>${label}<input name="${name}">${hint}</label>`};
+ const ctx={closePicker(){},$:s=>elements[s],field:(name,label,value,hint)=>`<label>${label}<input name="${name}">${hint}</label>`};
  vm.createContext(ctx);vm.runInContext(authSource,ctx);ctx.renderAuth(initialized);
  assert.equal(elements['#app'].innerHTML.includes('至少 12 字节'),!initialized);
  assert.ok(elements['#app'].innerHTML.includes('id="auth-error"'));
