@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="{{.Panel.Theme}}" data-layout="{{.Panel.Layout}}" data-background="{{.Panel.BackgroundPreset}}" data-network="{{.Panel.NetworkMode}}">
+<html lang="zh-CN" class="public-portal" data-theme="{{.Panel.Theme}}" data-layout="{{.Panel.Layout}}" data-background="{{.Panel.BackgroundPreset}}" data-network="{{.Panel.NetworkMode}}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark">
 <title>{{.Title}} · 栖网</title><link rel="icon" href="{{if .Panel.Favicon}}{{.Panel.Favicon}}{{else}}/__linknest/panel-logo.svg{{end}}">
-<link rel="stylesheet" href="/__linknest/portal.css?v={{version}}"><link rel="stylesheet" href="/__linknest/scrollbars.css?v={{version}}"><script defer src="/__linknest/portal.js?v={{version}}"></script></head>
+<link rel="stylesheet" href="/__linknest/portal.css?v={{version}}"><link rel="stylesheet" href="/__linknest/scrollbars.css?v={{version}}"><link rel="stylesheet" href="/__linknest/button-feedback.css?v={{version}}"><script defer src="/__linknest/portal.js?v={{version}}"></script></head>
 <body{{if and .LoggedIn (not .WOL)}} class="panel-page"{{end}}><div class="canvas-background" aria-hidden="true">{{if .Panel.Background}}<img class="page-background" src="{{.Panel.Background}}" alt="" referrerpolicy="no-referrer">{{end}}</div>
 {{if not .Panel.HideHeader}}<header class="panel-header"><div class="header-inner"><div class="brand"><img class="panel-logo" src="{{if .Panel.Logo}}{{.Panel.Logo}}{{else}}/__linknest/panel-logo.svg{{end}}" alt="栖网" referrerpolicy="no-referrer"><div>
 <h1>{{.Title}}</h1><p>{{if .WOL}}设备状态与远程开机{{else}}{{if .Panel.Subtitle}}{{.Panel.Subtitle}}{{else}}LinkNest Panel{{end}}{{end}}</p></div></div>

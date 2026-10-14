@@ -1,7 +1,6 @@
 /* Animated controls never change width or add a second loading icon. */
 .icon-button.refresh-button{border-radius:50%;width:40px;height:40px}
-.refresh-button .icon{transition:transform .18s ease;transform-origin:center}
-.refresh-button:hover:not(:disabled) .icon{transform:rotate(35deg)}
+.refresh-button .icon{width:20px;height:20px;stroke-width:1.9;transform-origin:center}
 .refresh-button.is-loading{opacity:1;color:var(--primary);background:var(--soft);border-color:var(--primary);cursor:progress}
 .refresh-button.is-loading .icon{animation:spin .8s linear infinite}
 .stat-link{display:block;color:var(--text);text-decoration:none;transition:background .16s ease,border-color .16s ease}

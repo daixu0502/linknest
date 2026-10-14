@@ -10,7 +10,7 @@ func TestPortalCanvasResources(t *testing.T) {
 	p := newPortal(testStore(t), quiet)
 	route := WebRoute{ID: "panel", Backend: "bookmarks", PublicAccess: true}
 	for _, item := range []struct{ path, mime string }{
-		{"scrollbars.css", "text/css"}, {"grain.svg", "image/svg+xml"},
+		{"scrollbars.css", "text/css"}, {"button-feedback.css", "text/css"}, {"grain.svg", "image/svg+xml"},
 	} {
 		w := httptest.NewRecorder()
 		p.serve(route, w, httptest.NewRequest("GET", "http://panel.example/__linknest/"+item.path+"?v="+version, nil))
@@ -20,7 +20,7 @@ func TestPortalCanvasResources(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	p.serve(route, w, httptest.NewRequest("GET", "http://panel.example/", nil))
-	for _, required := range []string{"canvas-background", "/__linknest/scrollbars.css?v=" + version, "viewport-fit=cover"} {
+	for _, required := range []string{"canvas-background", "/__linknest/scrollbars.css?v=" + version, "/__linknest/button-feedback.css?v=" + version, "public-portal", "viewport-fit=cover"} {
 		if !strings.Contains(w.Body.String(), required) {
 			t.Fatal("missing", required)
 		}
@@ -31,5 +31,8 @@ func TestPortalCanvasResources(t *testing.T) {
 	a := testApp(t)
 	if r := request(a, "GET", "/scrollbars.css?v="+version, nil, nil); r.Code != 200 {
 		t.Fatal("admin scrollbar resource unavailable", r.Code)
+	}
+	if r := request(a, "GET", "/button-feedback.css?v="+version, nil, nil); r.Code != 200 {
+		t.Fatal("admin button feedback resource unavailable", r.Code)
 	}
 }

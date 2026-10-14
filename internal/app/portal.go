@@ -108,7 +108,7 @@ func (p *Portal) serve(route WebRoute, w http.ResponseWriter, r *http.Request) {
 		serveCachedIcon(p.store.dir, w, r)
 		return
 	}
-	for _, f := range []string{"portal.css", "scrollbars.css", "portal.js", "panel-logo.svg", "grain.svg"} {
+	for _, f := range []string{"portal.css", "scrollbars.css", "button-feedback.css", "portal.js", "panel-logo.svg", "grain.svg"} {
 		if r.URL.Path == "/__linknest/"+f && r.Method == "GET" {
 			b, _ := assets.ReadFile(f)
 			mime := "text/css"
