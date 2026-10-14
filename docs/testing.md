@@ -1,4 +1,4 @@
-# LinkNest 1.0.4 测试
+# LinkNest 1.0.5 测试
 
 ## 运行
 
@@ -11,6 +11,7 @@ node scripts/test-panel.mjs
 node scripts/test-security.mjs
 node scripts/test-twofactor.mjs
 node scripts/test-notices.mjs
+node scripts/test-interaction.mjs
 go build -trimpath -o bin/linknest ./cmd/linknest
 ```
 
@@ -24,6 +25,7 @@ go build -trimpath -o bin/linknest ./cmd/linknest
 - DDNS 类型、删除远端确认、更新与凭据；证书长期任务及保护。
 - 路由器公网 IPv4 / IPv6 非阻塞读取、单次共享刷新、冷却、独立失败与旧值标记；服务状态文案统一。
 - 说明提示会话隐藏、持久不提示、恢复仅清理自身设置、存储不可用降级；故障警告不可隐藏。
+- 总览统计卡片直达、布局与快捷操作移除；弹窗菜单随表单滚动、不遮挡底部；圆形刷新及错误恢复、页面切换动画与减少动态效果支持。
 - 轻面板、图标缓存、WOL、SSH 指纹确认、终端；前端布局 / 滚动 / 登录语义。
 - 异常响应时间窗、阈值、白名单、内网豁免、IPv6、到期解封、单独解封 / 清空自动记录、保存及重启恢复。
 - 不信任 X-Forwarded-For；代理 404 达阈值后的拒绝，WebSocket / 流式响应保留。

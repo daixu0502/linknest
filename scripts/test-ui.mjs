@@ -14,6 +14,7 @@ async function scenario(page, initial, replacement, apiError = false) {
     $: () => nodes[0] || null,
     $$: () => nodes,
     api: async () => { if (apiError) throw Error('test network failure'); return {version: 'test'}; },
+    syncRefreshControls: () => {},
     render: () => { context.renderCount++; nodes = replacement; },
   };
   vm.createContext(context);

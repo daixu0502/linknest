@@ -1,0 +1,20 @@
+/* Animated controls never change width or add a second loading icon. */
+.icon-button.refresh-button{border-radius:50%;width:40px;height:40px}
+.refresh-button .icon{transition:transform .18s ease;transform-origin:center}
+.refresh-button:hover:not(:disabled) .icon{transform:rotate(35deg)}
+.refresh-button.is-loading{opacity:1;color:var(--primary);background:var(--soft);border-color:var(--primary);cursor:progress}
+.refresh-button.is-loading .icon{animation:spin .8s linear infinite}
+.stat-link{display:block;color:var(--text);text-decoration:none;transition:background .16s ease,border-color .16s ease}
+.stat-link:hover{background:var(--soft);border-color:var(--primary)}
+.overview-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr);grid-template-areas:"services security" "activity activity";gap:22px;align-items:stretch}
+.overview-grid>.panel{margin:0}
+.overview-services{grid-area:services}.overview-security{grid-area:security}.overview-activity{grid-area:activity}
+.overview-events{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px}
+.overview-events>.event{min-width:0}.overview-events>.event p{overflow-wrap:anywhere}
+/* Keep dropdowns in the scrolling form instead of clipping an absolute overlay
+   behind the dialog footer. In-flow layout also works in older mobile WebViews. */
+.modal-content .picker-menu{position:static;width:100%;margin-top:6px;max-height:min(210px,35dvh);overscroll-behavior:contain;box-shadow:none}
+.page-transition{animation:admin-page-in .18s ease-out both}
+@keyframes admin-page-in{from{opacity:.4;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:1050px){.overview-grid{grid-template-columns:1fr;grid-template-areas:"services" "security" "activity"}.overview-events{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.page-transition{animation:none}.refresh-button .icon,.stat-link{transition:none}.refresh-button.is-loading .icon{animation:none}}

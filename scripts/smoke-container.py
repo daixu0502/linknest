@@ -40,7 +40,7 @@ password = secrets.token_urlsafe(24)
 call("setup", "POST", {"token": bootstrap, "username": "admin", "password": password})
 call("login", "POST", {"username": "admin", "password": password})
 state = call("state")
-assert state["version"] == "1.0.4"
+assert state["version"] == "1.0.5"
 assert state["config"]["schema"] == 4
 assert state["config"]["access"]["autoBan"]["enabled"] is False
 assert state["firewall"]["enabled"] is False
