@@ -76,6 +76,7 @@ func (e *Engine) apply(c Config) {
 		groups[key] = append(groups[key], r)
 	}
 	// Close removed listeners before opening replacements, including web ↔ TCP.
+	conflicts := e.fw.forwardConflicts(c.Rules)
 	for key, listener := range e.webGroups {
 		if _, ok := groups[key]; !ok {
 			listener.stop()
@@ -84,12 +85,22 @@ func (e *Engine) apply(c Config) {
 	}
 	for id, running := range e.rules {
 		next, ok := desired[id]
-		if !ok || next.Kind != "web" && !reflect.DeepEqual(next, running.rule) || next.Kind != running.rule.Kind || running.status.State == "error" {
+		if !ok || next.Kind != "web" && !reflect.DeepEqual(next, running.rule) || next.Kind != running.rule.Kind || running.status.State == "error" && conflicts[id] == nil {
 			if running.stop != nil {
 				running.stop()
 			}
 			delete(e.rules, id)
 		}
+	}
+	for id, err := range conflicts {
+		old := e.rules[id]
+		if old == nil || old.status.Message != err.Error() {
+			e.log("error", desired[id].Name+"："+err.Error())
+		}
+		if old != nil && old.stop != nil {
+			old.stop()
+		}
+		e.rules[id] = &running{rule: desired[id], status: RuleStatus{ID: id, State: "error", Message: err.Error()}}
 	}
 	for id, r := range desired {
 		if r.Kind == "web" {
@@ -103,6 +114,10 @@ func (e *Engine) apply(c Config) {
 		var err error
 		if r.ForwardMode != "kernel" {
 			stop, err = e.start(r)
+		} else {
+			// Isolate local listener/config errors before publishing the shared
+			// kernel batch, so one bad port does not take healthy rules down.
+			err = kernelRuleReady(r)
 		}
 		if err != nil {
 			rr.status.State = "error"
@@ -159,14 +174,14 @@ func (e *Engine) apply(c Config) {
 	e.fw.sync(sharedFirewallRules(active), c)
 	if err := e.fw.syncKernel(active, c); err != nil {
 		for _, rr := range e.rules {
-			if rr.rule.ForwardMode == "kernel" {
+			if rr.rule.ForwardMode == "kernel" && rr.status.State == "running" {
 				rr.status.State = "error"
 				rr.status.Message = "内核转发未生效：" + err.Error()
 			}
 		}
 	} else {
 		for _, rr := range e.rules {
-			if rr.rule.ForwardMode == "kernel" {
+			if rr.rule.ForwardMode == "kernel" && rr.status.State == "running" {
 				rr.status.Message = "IPv4 内核 NAT 转发已生效"
 			}
 		}

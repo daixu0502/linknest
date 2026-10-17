@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 let saved,submit;
 const ctx={console,setInterval:()=>{},queueMicrotask:()=>{},document:{addEventListener:()=>{}},page:'security',loggedIn:true,
  state:{config:{access:{autoBan:{enabled:false,threshold:20,windowSeconds:60,banSeconds:3600,statusCodes:[404],ignorePrivate:true,ignoredPaths:[]},sources:[]},blacklist:[],whitelist:[]},firewall:{state:'applied',ports:[]}},
- structuredClone,Date,Number,Error,esc:v=>String(v).replaceAll('<','&lt;'),notice:s=>s,panel:(t,s,b)=>t+s+b,field:()=>'',picker:()=>'',toggle:()=>'',area:()=>'',btn:()=>'',ibtn:()=>'',pill:()=>'',row:()=>'',empty:()=>'',uid:()=> 'new-source',
+ structuredClone,Date,Number,Error,esc:v=>String(v).replaceAll('<','&lt;'),notice:s=>s,actionNote:s=>s,panel:(t,s,b)=>t+s+b,field:()=>'',picker:()=>'',toggle:()=>'',area:()=>'',btn:()=>'',ibtn:()=>'',pill:()=>'',row:()=>'',empty:()=>'',uid:()=> 'new-source',
  dialog:(t,c,onSave)=>{submit=onSave},api:async(path,method,data)=>{if(method==='POST')saved={path,method,data};return {access:{bans:[],sources:[]}}},$:()=>null,saveConfig:async c=>{saved=c},toast:()=>{}
 };
 vm.createContext(ctx);vm.runInContext(fs.readFileSync(new URL('../web/security.js',import.meta.url),'utf8'),ctx);

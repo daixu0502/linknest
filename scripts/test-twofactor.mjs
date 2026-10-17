@@ -11,7 +11,7 @@ const ctx={
  requestAnimationFrame:callback=>callback(),
  esc:value=>String(value).replaceAll('<','&lt;'),
  panel:(title,sub,body)=>title+sub+body,pill:text=>text,
- btn:(label,action)=>`<button data-action="${action}">${label}</button>`,notice:text=>text,field:name=>`<input name="${name}">`,toggle:name=>`<input name="${name}" type="checkbox">`,
+ btn:(label,action)=>`<button data-action="${action}">${label}</button>`,notice:text=>text,actionNote:text=>text,field:name=>`<input name="${name}">`,toggle:name=>`<input name="${name}" type="checkbox">`,
  dialog:(title,content,onSave)=>dialogs.push({title,content,onSave}),
  render(){},toast(){},
  async api(path,method,body){calls.push({path,method,body});if(path==='2fa/begin')return{secret:'TEST-ONLY',qrDataURL:'data:image/png;base64,test-only'};if(path==='state')return state;return{recoveryCodes:codes};},

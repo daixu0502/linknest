@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const context={structuredClone,$$:()=>[],document:{addEventListener(){}},modal:{contains(){return false;}},
  state:{config:{ddns:[{id:'task',records:[{id:'record',domain:'home.example.com',type:'A',line:'default'}]}],rules:[]},certificates:[]},
- certificateAction:async()=>false,bookmarkAction:async()=>false,notice:s=>s,
+ certificateAction:async()=>false,bookmarkAction:async()=>false,notice:s=>s,actionNote:s=>s,
  toggle:(name,label,value,hint)=>`${name}:${value}:${label}:${hint}`,
  dialog:(title,body,save)=>{context.dialogResult={title,body,save};},
  api:async(path,method,payload)=>{if(path!=='state')context.request={path,method,payload};return {message:'done'};},render(){},toast(){},

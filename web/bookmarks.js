@@ -55,7 +55,7 @@ async function bookmarkAction(key){
   if(action==='bookmark-group-add'||action==='bookmark-group-edit'){
    dialog(action.endsWith('add')?'添加分组':'重命名分组',field('name','分组名称',group),async d=>{const name=d.name.trim(),c=structuredClone(state.config),groups=bookmarkGroups().filter(Boolean);if(!name||groups.some(g=>g!==group&&g===name))throw Error('分组名称不能为空或重复');if(action.endsWith('edit')){c.bookmarks.forEach(b=>{if(b.group===group)b.group=name;});groups[groups.indexOf(group)]=name;}else groups.push(name);c.panel={...c.panel,groups};await saveConfig(c);});return true;
   }
-  if(action==='bookmark-group-delete'){dialog('删除分组',notice('站点会移到“未分组”，不会删除站点。'),async()=>{const c=structuredClone(state.config);c.bookmarks.forEach(b=>{if(b.group===group)b.group='';});c.panel={...c.panel,groups:bookmarkGroups().filter(g=>g&&g!==group)};await saveConfig(c);});return true;}
+  if(action==='bookmark-group-delete'){dialog('删除分组',actionNote('站点会移到“未分组”，不会删除站点。'),async()=>{const c=structuredClone(state.config);c.bookmarks.forEach(b=>{if(b.group===group)b.group='';});c.panel={...c.panel,groups:bookmarkGroups().filter(g=>g&&g!==group)};await saveConfig(c);});return true;}
   const groups=bookmarkGroups().filter(Boolean),n=groups.indexOf(group),other=n+(action.endsWith('up')?-1:1);
   if(other<0||other>=groups.length){toast('已在分组边界');return true;}
   [groups[n],groups[other]]=[groups[other],groups[n]];await saveConfig({...structuredClone(state.config),panel:{...panelOptions(),groups}});return true;

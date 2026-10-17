@@ -12,6 +12,10 @@ assert.match(ctx.notice('Helpful <text>'),/&lt;text>/);
 assert.equal(ctx.noticeAction('unrelated'),false);
 ctx.noticeAction('notice-hide:'+encodeURIComponent('Helpful <text>'));
 assert.equal(ctx.notice('Helpful <text>'),'');
+assert.match(ctx.actionNote('Helpful <text>'),/action-note/);
+assert.ok(!ctx.actionNote('Helpful <text>').includes('data-action'));
+assert.match(ctx.actionNote('Helpful <text>'),/&lt;text>/);
+assert.match(ctx.actionNote('Important',true),/role="alert"/);
 assert.ok(ctx.notice('other'));
 ctx.noticeAction('notice-mute:'+encodeURIComponent('proxy-shared:r:1'));
 assert.equal(ctx.notice('2 shared rules',false,'proxy-shared:r:1'),'');
@@ -39,6 +43,10 @@ vm.createContext(ipctx);vm.runInContext(workflows.split('\n').find(l=>l.startsWi
 assert.match(ipctx.ddnsRouterAddresses(),/IPv4|IPV4/);assert.match(ipctx.ddnsRouterAddresses(),/2606:4700::1111.*上次检测/);
 ipctx.state={routerIPs:{ipv4:{loading:true},ipv6:{error:'no IPv6'}}};assert.match(ipctx.ddnsRouterAddresses(),/检测中/);assert.match(ipctx.ddnsRouterAddresses(),/未获取/);
 assert.ok(workflows.includes("btn('恢复所有提示','notice-restore'"));
+for(const file of ['app','workflows','bookmarks','certificates','twofactor','security']){
+ const js=fs.readFileSync(new URL('../web/'+file+'.js',import.meta.url),'utf8');
+ for(const line of js.split('\n'))if(line.includes('dialog('))assert.ok(!line.includes('notice('),'dialog operation details must not be dismissible: '+file);
+}
 assert.match(workflows, /panel-body help-preferences/);
 assert.match(workflows, /help-preferences"><p class="split-note"/);
 assert.match(workflows, /settings-card-actions">\$\{btn\('恢复所有提示'/);

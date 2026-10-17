@@ -27,6 +27,44 @@ func validateKernelRule(r Rule) error {
 	return nil
 }
 
+func kernelRuleReady(r Rule) error {
+	if err := validateKernelRule(r); err != nil {
+		return err
+	}
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		return err
+	}
+	h, _, _ := hostPort(r.Listen)
+	th, _, _ := hostPort(r.Target)
+	local := map[string]bool{}
+	for _, a := range addresses {
+		ip, _, _ := net.ParseCIDR(a.String())
+		if ip != nil {
+			local[ip.String()] = true
+		}
+	}
+	if local[th] || h != "0.0.0.0" && !local[h] {
+		return errors.New("目标不可为本机，监听 IP 必须属于本机网卡")
+	}
+	for _, proto := range ruleProtocols(r) {
+		if proto == "tcp" {
+			ln, err := net.Listen("tcp4", r.Listen)
+			if err != nil {
+				return fmt.Errorf("本机 TCP 监听冲突（%s）：%w", r.Listen, err)
+			}
+			ln.Close()
+		} else {
+			ln, err := net.ListenPacket("udp4", r.Listen)
+			if err != nil {
+				return fmt.Errorf("本机 UDP 监听冲突（%s）：%w", r.Listen, err)
+			}
+			ln.Close()
+		}
+	}
+	return nil
+}
+
 func kernelScope(r Rule, proto string) string {
 	h, p, _ := hostPort(r.Listen)
 	th, tp, _ := hostPort(r.Target)
@@ -131,41 +169,9 @@ func (f *Firewall) syncKernel(active []Rule, c Config) (result error) {
 	if data, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward"); err != nil || strings.TrimSpace(string(data)) != "1" {
 		return errors.New("路由器 IPv4 转发未开启；未修改系统开关")
 	}
-	addresses, err := net.InterfaceAddrs()
-	if err != nil {
-		return err
-	}
-	local := map[string]bool{}
-	for _, a := range addresses {
-		ip, _, _ := net.ParseCIDR(a.String())
-		if ip != nil {
-			local[ip.String()] = true
-		}
-	}
 	for _, r := range rules {
-		if err := validateKernelRule(r); err != nil {
+		if err := kernelRuleReady(r); err != nil {
 			return err
-		}
-		h, _, _ := hostPort(r.Listen)
-		th, _, _ := hostPort(r.Target)
-		if local[th] || h != "0.0.0.0" && !local[h] {
-			return errors.New("目标不可为本机，监听 IP 必须属于本机网卡")
-		}
-		// Refuse to intercept ports already owned by another local service.
-		for _, proto := range ruleProtocols(r) {
-			if proto == "tcp" {
-				ln, err := net.Listen("tcp4", r.Listen)
-				if err != nil {
-					return fmt.Errorf("端口已占用：%w", err)
-				}
-				ln.Close()
-			} else {
-				ln, err := net.ListenPacket("udp4", r.Listen)
-				if err != nil {
-					return fmt.Errorf("端口已占用：%w", err)
-				}
-				ln.Close()
-			}
 		}
 	}
 	for _, v := range kernelChains {
