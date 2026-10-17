@@ -163,7 +163,7 @@ func fetch(ctx context.Context, src Source) ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	r.Header.Set("User-Agent", "LinkNest/1.0.9 IP-feed")
+	r.Header.Set("User-Agent", "LinkNest/1.1.0 IP-feed")
 	client := secureClient()
 	defer client.CloseIdleConnections()
 	res, e := client.Do(r)

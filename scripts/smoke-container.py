@@ -41,10 +41,14 @@ password = secrets.token_urlsafe(24)
 call("setup", "POST", {"token": bootstrap, "username": "admin", "password": password})
 call("login", "POST", {"username": "admin", "password": password})
 state = call("state")
-assert state["version"] == "1.0.9"
+assert state["version"] == "1.1.0"
 assert state["config"]["schema"] == 4
 assert state["config"]["access"]["autoBan"]["enabled"] is False
 assert state["firewall"]["enabled"] is False
+upnp = call("upnp/state")
+assert upnp["config"]["enabled"] is False and upnp["config"]["writePolicy"] == "own"
+assert upnp["config"]["blacklist"] == [] and upnp["mappings"] == []
+assert upnp["policyPending"] is False and upnp["nativePolicyApplied"] is False
 config = state["config"]
 config["rules"] = [
     {"id": "test-http", "name": "Local HTTP smoke", "kind": "web", "enabled": True,
@@ -56,7 +60,7 @@ call("config", "PUT", config)
 running = call("state")
 assert all(x["state"] == "running" for x in running["rules"])
 assert len(running["config"]["rules"][0]["routes"]) == 1, "Legacy web rule was not migrated"
-for asset in ("workflows.js", "portal.css", "portal.js", "certificates.js", "navigation.js", "security.js"):
+for asset in ("workflows.js", "portal.css", "portal.js", "certificates.js", "navigation.js", "security.js", "upnp.js", "upnp.css"):
     with client.open(base.replace("/api/", "/") + asset, timeout=10) as response:
         assert response.status == 200 and len(response.read()) > 100
 for port in (17880, 18080, 18082):

@@ -3,6 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('n
 const {chromium}=require('playwright');
 (async()=>{
  const root=path.resolve(__dirname,'../web'),server=http.createServer((req,res)=>{
+  if(req.url.startsWith('/api/upnp/state')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({config:{enabled:true,writePolicy:'service',descriptionUrl:'http://192.168.1.1:5351/rootDesc.xml',interface:'br-lan',lanZone:'lan',blacklist:[{id:'qa',name:'Blocked device',address:'192.168.1.20/32',enabled:true}]},mappings:[{description:'Sample device',protocol:'TCP',externalPort:6881,internalIP:'192.168.1.2',internalPort:6881,enabled:true,leaseSeconds:3600}],policyPending:true}));return;}
   if(req.url.startsWith('/api/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({initialized:true,authenticated:false}));return;}
   const file=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]==='/'?'/index.html':req.url.split('?')[0]));
   if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
@@ -29,6 +30,12 @@ const {chromium}=require('playwright');
    }
    await page.evaluate(()=>{noticeAction('notice-mute:'+encodeURIComponent('停止该监听会断开相关业务连接。'));state={config:{rules:[{id:'qa',enabled:true}]}};action('toggle:qa');});
    await page.locator('.action-note').waitFor();assert.equal(await page.locator('#modal .notice-actions').count(),0);assert.match(await page.locator('.action-note').innerText(),/断开/);
+   await page.evaluate(()=>closeModal());await page.waitForFunction(()=>!document.querySelector('#dialog-form'));
+   await page.evaluate(()=>{loggedIn=true;state={version:'test',interfaces:[{name:'br-lan'}],config:{rules:[],sshHosts:[]}};location.hash='#/forwards/upnp';page='forwards';render();});
+   await page.locator('.upnp-mapping').first().waitFor();assert.equal(await page.locator('[data-action="add:forwards"]').count(),0);
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   await page.locator('[data-action="upnp-edit:0"]').click();await page.locator('#dialog-form [name=externalPort]').waitFor();
+   assert.ok(await page.evaluate(()=>{const e=document.querySelector('#modal');return e.getBoundingClientRect().right<=innerWidth&&e.scrollWidth<=e.clientWidth;}));
    assert.deepEqual(errors,[]);await page.close();
   }
   console.log('Desktop/mobile dialog conditional spacing, bounds and non-dismissible operation notes passed.');

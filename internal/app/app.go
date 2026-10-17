@@ -55,6 +55,7 @@ type App struct {
 	engine           *Engine
 	dns              *DNSManager
 	certs            *CertManager
+	upnp             *UPnPManager
 	auth             authConfig
 	bootstrap        string
 	sessions         map[string]session
@@ -130,6 +131,7 @@ func newApp(dir, addr string, firewall bool) (*App, error) {
 	a.engine = newEngine(s, a.event, newFirewall(firewall))
 	a.dns = newDNS(s, a.event)
 	a.certs = newCerts(s, a.event)
+	a.upnp = newUPnP(s)
 	return a, nil
 }
 func respond(w http.ResponseWriter, status int, v any) {
@@ -396,6 +398,10 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
+	if strings.HasPrefix(p, "/api/upnp/") {
+		a.upnpAPI(w, r)
+		return
+	}
 	if strings.HasPrefix(p, "/api/2fa/") {
 		a.twoFactorAPI(w, r)
 		return

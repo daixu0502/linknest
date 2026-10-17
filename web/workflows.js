@@ -54,7 +54,8 @@ function proxyPage(){
    ((r.routes||[]).length?r.routes.map(sub=>`<article class="route-row"><div class="route-title"><strong>${esc(sub.name)}</strong>${pill(sub.enabled?'已启用':'已停用',sub.enabled?'blue':'')}</div><div class="route-flow"><div><small>前端域名</small><p>${esc(sub.domains.length?sub.domains.join(' · '):'默认入口（全部域名）')}</p>${routeAccessLinks(r,sub)}</div><span class="flow-arrow">→</span><div><small>后端服务</small><p>${esc(backendName(sub))}</p>${['bookmarks','wol'].includes(sub.backend)?`<small>${sub.publicAccess?'免密码访问':'独立密码保护'}</small>`:''}</div></div><div class="actions">${ibtn(sub.enabled?'停用子规则':'启用子规则','route-toggle:'+r.id+':'+sub.id,'power')}${ibtn('编辑子规则','route-edit:'+r.id+':'+sub.id,'edit')}${ibtn('删除子规则','route-delete:'+r.id+':'+sub.id,'trash')}</div></article>`).join(''):empty('添加第一条子规则','选择前端域名，以及外部 Web 服务、内置轻面板或 WOL。')),listenerActions(r));
  }).join(''):panel('反向代理','先创建监听入口，再添加子规则',empty('暂无主规则','例如使用一个 HTTPS 端口承接多个服务域名。')));
 }
-function forwardPage(){const rules=state.config.rules.filter(r=>r.kind!=='web');return notice('远程桌面建议使用 TCP + UDP。IPv4 内核加速直接走路由器 NAT，减少用户态中转；需 host 网络和防火墙授权。IPv6 或域名目标使用兼容转发。')+panel('转发规则','独立启停，与反向代理分开管理',rules.length?ruleRows(rules):empty('暂无端口转发','按协议创建监听端口与目标主机。'));}
+function forwardRulesPage(){const rules=state.config.rules.filter(r=>r.kind!=='web');return notice('远程桌面建议使用 TCP + UDP。IPv4 内核加速直接走路由器 NAT，减少用户态中转；需 host 网络和防火墙授权。IPv6 或域名目标使用兼容转发。')+panel('转发规则','独立启停，与反向代理分开管理',rules.length?ruleRows(rules):empty('暂无端口转发','按协议创建监听端口与目标主机。'));}
+function forwardPage(){return forwardTabs()+(forwardTab()==='upnp'?upnpPage():forwardRulesPage());}
 function editListener(group,id){
  const old=state.config.rules.find(r=>r.id===id)||{};const web=old.kind?old.kind==='web':group==='rules';
  let host='',port=web?'18080':'19000';if(old.listen){const n=old.listen.lastIndexOf(':');host=old.listen.slice(0,n).replace(/^\[|\]$/g,'');port=old.listen.slice(n+1);if(['0.0.0.0','::'].includes(host))host='';}

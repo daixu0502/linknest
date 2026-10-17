@@ -1,4 +1,4 @@
-# LinkNest 1.0.9 测试
+# LinkNest 1.1.0 测试
 
 ## 运行
 
@@ -12,12 +12,16 @@ node scripts/test-security.mjs
 node scripts/test-twofactor.mjs
 node scripts/test-notices.mjs
 node scripts/test-interaction.mjs
+node scripts/test-upnp.mjs
 go build -trimpath -o bin/linknest ./cmd/linknest
 ```
 
 可选 `go test -race ./...` 需支持的 CGO 工具链。ARM64 交叉编译使用 `GOOS=linux GOARCH=arm64 CGO_ENABLED=0`；编译成功不等于在设备运行成功。
 
 ## 自动回归范围
+
+- UPnP 服务发现、同地址控制 URL、无代理/跳转、SOAP 错误、映射增删改与竞争保护、失败恢复；与 LinkNest 规则冲突、登录/CSRF、并发拒绝和独立数据保存。
+- UPnP 原厂黑名单仅操作自有 UCI / INPUT 规则；模拟预检查失败、应用失败、并发写与回滚。跨设备管理开关模拟开启、关闭、取消及 EOF 回滚；SSH 指纹校验与两阶段确认、现有映射保留检查。原厂模式切换不在生产自动触发。
 
 - 旧配置迁移、加密密钥、账户、HTTPS 会话与 CSRF。
 - 两步验证：RFC 6238 向量、本地二维码、密码单独不能登录、时钟偏差与防重放、一次性恢复码及并发消费、绑定有效期 / 会话限制、限流、重启与账号变更保留、恢复码轮换与关闭、密钥缺失拒绝启动、分步弹窗切换。
