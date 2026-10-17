@@ -8,6 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -200,9 +203,43 @@ func TestUPnPToolHelper(t *testing.T) {
 			exit(0)
 		}
 		if action == "show" {
-			for id, values := range v {
-				fmt.Printf("firewall.%s=%s\n", id, values["type"])
+			ids := []string{}
+			for id := range v {
+				if id != "fixture_order" {
+					ids = append(ids, id)
+				}
 			}
+			sort.Strings(ids)
+			order := strings.Fields(v["fixture_order"]["ids"])
+			for _, id := range ids {
+				if !slices.Contains(order, id) {
+					order = append(order, id)
+				}
+			}
+			for _, id := range order {
+				if values, exists := v[id]; exists {
+					fmt.Printf("%s.%s=%s\n", pkg, id, values["type"])
+				}
+			}
+			exit(0)
+		}
+		if action == "reorder" {
+			key, index, ok := strings.Cut(ref, "=")
+			n, err := strconv.Atoi(index)
+			p := strings.Split(key, ".")
+			if !ok || err != nil || len(p) != 2 || n < 0 {
+				exit(2)
+			}
+			order := []string{}
+			for _, id := range strings.Fields(v["fixture_order"]["ids"]) {
+				if id != p[1] && v[id] != nil {
+					order = append(order, id)
+				}
+			}
+			n = min(n, len(order))
+			order = append(order[:n], append([]string{p[1]}, order[n:]...)...)
+			v["fixture_order"] = map[string]string{"ids": strings.Join(order, " ")}
+			write(filepath.Join(base, pkg), v)
 			exit(0)
 		}
 		if action == "set" {

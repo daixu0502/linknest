@@ -5,7 +5,7 @@ let saved,dialogResult;
 const ctx={location:{hash:'#/forwards/upnp'},document:{addEventListener(){}},queueMicrotask(){},setInterval(){},loggedIn:true,page:'forwards',structuredClone,
  state:{interfaces:[{name:'br-lan'}],config:{sshHosts:[]},twoFactor:{enabled:false}},
  esc:v=>String(v??'').replaceAll('<','&lt;'),pill:String,icon:()=>'',ibtn:()=>'<button>test</button>',btn:()=>'',panel:(t,s,b)=>b,actionNote:s=>s,empty:(t,s)=>t+s,notice:String,
- field:(n,l,v)=>n+':'+v,picker:(n,l,v)=>n+':'+v,toggle:n=>n,area:n=>n,uid:()=> 'new-id',
+ field:(n,l,v)=>n+':'+v,picker:(n,l,v)=>n+':'+v,toggle:(n,l,v,h)=>n+l+(h||''),area:n=>n,uid:()=> 'new-id',nextTwoFactorDialog:fn=>fn(),
  dialog:(title,body,save)=>{dialogResult={title,body,save}},api:async(path,method,data)=>{if(path==='upnp/state')return fixture;saved={path,method,data};return{message:'done'}},toast(){},navigatePage:(...p)=>{ctx.route=p},$:()=>null,$$:()=>[],
 };vm.createContext(ctx);vm.runInContext(fs.readFileSync(new URL('../web/upnp.js',import.meta.url),'utf8'),ctx);
 assert.equal(ctx.forwardTab(),'upnp');assert.match(ctx.forwardTabs(),/路由器 UPnP/);assert.match(ctx.upnpPage(),/upnp-mappings/);
@@ -17,6 +17,13 @@ ctx.upnpEditMapping(0);assert.match(dialogResult.title,/编辑/);await dialogRes
 assert.equal(saved.path,'upnp/mapping');assert.equal(saved.data.operation,'edit');assert.equal(saved.data.before.externalPort,6881);assert.equal(saved.data.after.externalPort,6882);
 await ctx.upnpAction('upnp-delete:0');assert.match(dialogResult.body,/重新申请/);await dialogResult.save();assert.equal(saved.data.operation,'delete');
 ctx.upnpPolicyDialog();assert.match(dialogResult.title,/可信/);await dialogResult.save();assert.equal(ctx.route[0],'terminal');
+ctx.upnpPortsDialog(true);assert.match(dialogResult.title,/可信/);
+ctx.state.config.sshHosts=[{id:'router',username:'root',fingerprint:'verified',address:'192.168.1.1:22',name:'router'}];
+vm.runInContext('upnpState.forwardPorts=[6082,6881];upnpState.config.portProtection=true;upnpState.config.protectedPorts=[6082];upnpState.portsPending=true',ctx);
+assert.match(ctx.upnpView().ports,/待同步/);assert.match(ctx.upnpView().ports,/TCP.*UDP/);
+ctx.upnpPortsDialog(true);assert.match(dialogResult.title,/应用转发端口保护/);assert.match(dialogResult.body,/不会自动删除映射/);
+await dialogResult.save({adminPassword:'test-only',password:'one-time'});assert.equal(saved.path,'upnp/ports');assert.equal(saved.data.enabled,true);
+ctx.upnpPortsDialog(false);assert.match(dialogResult.title,/解除/);await dialogResult.save({});assert.equal(saved.data.enabled,false);
 const html=fs.readFileSync(new URL('../web/index.html',import.meta.url),'utf8');assert.match(html,/upnp\.js\?v=/);assert.match(html,/upnp\.css\?v=/);
 vm.runInContext("upnpState.config.writePolicy='own';upnpState.clientIP='192.168.1.1'",ctx);
 assert.equal(ctx.upnpCanWrite(fixture.mappings[0]),false);assert.match(ctx.upnpMappingButtons(fixture.mappings[0],0),/disabled/);

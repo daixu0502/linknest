@@ -35,6 +35,9 @@ type UPnPConfig struct {
 	LANZone              string      `json:"lanZone"`
 	WritePolicy          string      `json:"writePolicy"`
 	WritePolicyUpdatedAt string      `json:"writePolicyUpdatedAt,omitempty"`
+	PortProtection       bool        `json:"portProtection"`
+	ProtectedPorts       []int       `json:"protectedPorts,omitempty"`
+	PortsUpdatedAt       string      `json:"portsUpdatedAt,omitempty"`
 	Blacklist            []UPnPBlock `json:"blacklist"`
 }
 type UPnPMapping struct {
@@ -86,6 +89,7 @@ func (u *UPnPManager) snapshot() (UPnPConfig, string, string, string) {
 	defer u.mu.Unlock()
 	c := u.config
 	c.Blacklist = append([]UPnPBlock{}, c.Blacklist...)
+	c.ProtectedPorts = append([]int{}, c.ProtectedPorts...)
 	return c, u.appliedDigest, u.appliedAt, u.loadError
 }
 func (u *UPnPManager) save(c UPnPConfig, digest, at string) error {
@@ -125,6 +129,9 @@ func upnpEndpoint(raw string) (*url.URL, error) {
 	return u, nil
 }
 func validateUPnPConfig(c *UPnPConfig) error {
+	if err := validateUPnPPorts(c.ProtectedPorts); err != nil {
+		return err
+	}
 	if c.WritePolicy == "" {
 		c.WritePolicy = "own"
 	}

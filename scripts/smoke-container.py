@@ -41,12 +41,14 @@ password = secrets.token_urlsafe(24)
 call("setup", "POST", {"token": bootstrap, "username": "admin", "password": password})
 call("login", "POST", {"username": "admin", "password": password})
 state = call("state")
-assert state["version"] == "1.1.1"
+assert state["version"] == "1.1.2"
 assert state["config"]["schema"] == 4
 assert state["config"]["access"]["autoBan"]["enabled"] is False
 assert state["firewall"]["enabled"] is False
 upnp = call("upnp/state")
 assert upnp["config"]["enabled"] is False and upnp["config"]["writePolicy"] == "own"
+assert upnp["config"]["portProtection"] is False and upnp["portsPending"] is False
+assert upnp["forwardPorts"] == [] and upnp["portConflicts"] == []
 assert upnp["config"]["blacklist"] == [] and upnp["mappings"] == []
 assert upnp["policyPending"] is False and upnp["nativePolicyApplied"] is False
 config = state["config"]

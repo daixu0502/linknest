@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -19,7 +20,7 @@ func (a *App) upnpAPI(w http.ResponseWriter, r *http.Request) {
 	c, digest, at, loadError := u.snapshot()
 	p := strings.TrimPrefix(r.URL.Path, "/api/upnp/")
 	timeout := 20 * time.Second
-	if p == "mode" {
+	if p == "mode" || p == "ports" {
 		timeout = 45 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
@@ -38,6 +39,15 @@ func (a *App) upnpAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		next.WritePolicyUpdatedAt = c.WritePolicyUpdatedAt
+		if next.PortProtection != c.PortProtection || !slices.Equal(next.ProtectedPorts, c.ProtectedPorts) {
+			fail(w, 400, "请使用保护转发端口开关及同步按钮修改原厂端口保护")
+			return
+		}
+		next.PortsUpdatedAt = c.PortsUpdatedAt
+		if c.PortProtection && (next.DescriptionURL != c.DescriptionURL || next.Interface != c.Interface) {
+			fail(w, 409, "请先关闭并解除当前路由器端口保护，再更换连接地址或网卡")
+			return
+		}
 		if err := u.save(next, digest, at); err != nil {
 			fail(w, 400, err.Error())
 			return
@@ -53,9 +63,17 @@ func (a *App) upnpAPI(w http.ResponseWriter, r *http.Request) {
 		a.upnpSwitchMode(w, r, ctx, c, digest, at)
 		return
 	}
+	if p == "ports" && r.Method == "POST" {
+		a.upnpProtectPorts(w, r, ctx, c, digest, at)
+		return
+	}
 	if p == "state" && r.Method == "GET" {
 		pending := (digest != "" || len(c.Blacklist) > 0) && digest != upnpPolicyDigest(c)
 		result := map[string]any{"ok": true, "config": c, "mappings": []UPnPMapping{}, "error": loadError, "truncated": false, "appliedAt": at, "policyPending": pending, "nativePolicyApplied": digest != ""}
+		ports := upnpForwardPorts(a.store.snapshot().Rules)
+		result["forwardPorts"] = ports
+		result["portsPending"] = c.PortProtection && !slices.Equal(ports, c.ProtectedPorts)
+		result["portConflicts"] = []UPnPMapping{}
 		if c.Enabled && loadError == "" {
 			s, err := discoverUPnP(ctx, c, u.clientFactory)
 			if err == nil {
@@ -64,6 +82,7 @@ func (a *App) upnpAPI(w http.ResponseWriter, r *http.Request) {
 				var truncated bool
 				mappings, truncated, err = s.list(ctx)
 				result["mappings"], result["truncated"] = mappings, truncated
+				result["portConflicts"] = upnpPortConflicts(ports, mappings)
 			}
 			if err != nil {
 				result["error"] = err.Error()
@@ -105,6 +124,10 @@ func (a *App) upnpAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		if q.After.LeaseSeconds > 604800 {
 			fail(w, 400, "新租期最长 7 天，0 为永久")
+			return
+		}
+		if c.PortProtection && (slices.Contains(c.ProtectedPorts, q.After.ExternalPort) || slices.Contains(upnpForwardPorts(a.store.snapshot().Rules), q.After.ExternalPort)) {
+			fail(w, 409, "此端口属于转发端口保护范围，原厂兼容模式同时保护 TCP 和 UDP")
 			return
 		}
 		for _, b := range c.Blacklist {

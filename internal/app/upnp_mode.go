@@ -112,6 +112,10 @@ echo LINKNEST_UPNP_MODE_OK
 }
 
 func runUPnPMode(ctx context.Context, host SSHHost, password, privateKey string, allow bool, verify func(context.Context) error) error {
+	return runUPnPTransaction(ctx, host, password, privateKey, buildUPnPModeScript(allow), "MODE", verify)
+}
+
+func runUPnPTransaction(ctx context.Context, host SSHHost, password, privateKey, script, operation string, verify func(context.Context) error) error {
 	var auth ssh.AuthMethod
 	if privateKey != "" {
 		key, err := ssh.ParsePrivateKey([]byte(privateKey))
@@ -163,12 +167,12 @@ func runUPnPMode(ctx context.Context, host SSHHost, password, privateKey string,
 	if err != nil {
 		return err
 	}
-	if err = session.Start("sh -c " + upnpShellQuote(buildUPnPModeScript(allow))); err != nil {
+	if err = session.Start("sh -c " + upnpShellQuote(script)); err != nil {
 		return err
 	}
 	reader := bufio.NewReader(io.LimitReader(output, 65536))
 	line, err := reader.ReadString('\n')
-	if err != nil || strings.TrimSpace(line) != "LINKNEST_UPNP_MODE_READY" {
+	if err != nil || strings.TrimSpace(line) != "LINKNEST_UPNP_"+operation+"_READY" {
 		input.Close()
 		session.Wait()
 		return fmt.Errorf("原厂 UPnP 切换未就绪：%s", strings.TrimSpace(stderr.String()))
@@ -185,7 +189,7 @@ func runUPnPMode(ctx context.Context, host SSHHost, password, privateKey string,
 	input.Close()
 	line, readErr := reader.ReadString('\n')
 	waitErr := session.Wait()
-	if readErr != nil || waitErr != nil || strings.TrimSpace(line) != "LINKNEST_UPNP_MODE_OK" {
+	if readErr != nil || waitErr != nil || strings.TrimSpace(line) != "LINKNEST_UPNP_"+operation+"_OK" {
 		return fmt.Errorf("UPnP 切换确认未完成，请核对原厂服务：%s", strings.TrimSpace(stderr.String()))
 	}
 	return nil
