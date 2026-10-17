@@ -37,6 +37,12 @@ const nodes = await scenario('certs', [
 assert.deepEqual(nodes.map(node => node.open), [true, false, true]);
 await scenario('certs', [], [], true);
 console.log('UI refresh regression tests passed (empty / multiple jobs / errors).');
+for(const force of [false,true]){
+ let rendered=0,upnpReads=0;
+ const ctx={fetching:false,loggedIn:true,page:'forwards',modal:{open:false},state:{},forwardTab:()=> 'upnp',$:()=>({}),$$:()=>[],syncRefreshControls(){},api:async()=>({version:'test'}),render(){rendered++;},refreshUPnP:async()=>{upnpReads++;}};
+ vm.createContext(ctx);vm.runInContext(refreshSource,ctx);await ctx.refresh(force);
+ assert.equal(rendered,0,'UPnP state refresh must not rebuild the page');assert.equal(upnpReads,force?1:0);assert.equal(ctx.fetching,false);
+}
 
 const workflows=fs.readFileSync(new URL('../web/workflows.js',import.meta.url),'utf8');
 const immediate=workflows.slice(workflows.indexOf('async function saveImmediateSetting('),workflows.indexOf("\ndocument.addEventListener('change'"));
@@ -60,8 +66,10 @@ console.log('Immediate setting save/failure and hash routing regressions passed.
 const authSource=source.slice(source.indexOf('function renderAuth('),source.indexOf('\nfunction render()'));
 for(const initialized of [false,true]){
  const elements={'#app':{},'#auth-form':{}};
- const ctx={closePicker(){},$:s=>elements[s],field:(name,label,value,hint)=>`<label>${label}<input name="${name}">${hint}</label>`};
+ let cacheCleared=false;
+ const ctx={closePicker(){},resetUPnPState(){cacheCleared=true;},$:s=>elements[s],field:(name,label,value,hint)=>`<label>${label}<input name="${name}">${hint}</label>`};
  vm.createContext(ctx);vm.runInContext(authSource,ctx);ctx.renderAuth(initialized);
+ assert.equal(cacheCleared,true,'UPnP cache cleared before another login');
  assert.equal(elements['#app'].innerHTML.includes('至少 12 字节'),!initialized);
  assert.ok(elements['#app'].innerHTML.includes('id="auth-error"'));
  assert.ok(elements['#app'].innerHTML.includes('id="auth-username" name="username" type="text" autocomplete="username"'));

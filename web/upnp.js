@@ -1,10 +1,13 @@
 'use strict';
-let upnpState=null,upnpRefreshing=false;
+let upnpState=null,upnpRefreshing=false,upnpRequest=null,upnpEpoch=0,upnpReadError='';
+function resetUPnPState(){upnpEpoch++;upnpState=null;upnpReadError='';upnpRequest=null;upnpRefreshing=false;}
+function syncUPnPControls(){for(const button of $$('[data-action="upnp-refresh"]')){button.disabled=upnpRefreshing;button.classList.toggle('is-loading',upnpRefreshing);button.setAttribute('aria-busy',String(upnpRefreshing));}}
 function forwardTab(){return location.hash.split('/')[2]==='upnp'?'upnp':'rules';}
 function forwardTabs(){return `<div class="panel-tabs" role="tablist" aria-label="转发管理">${[['rules','LinkNest 转发'],['upnp','路由器 UPnP']].map(([id,label])=>`<button type="button" role="tab" aria-selected="${forwardTab()===id}" data-action="forward-tab:${id}">${label}</button>`).join('')}</div>`;}
 function upnpPage(){
- queueMicrotask(()=>refreshUPnP());
- return `<div class="upnp-page">${panel('原厂 UPnP 映射','直接管理路由器现有映射，不启动另一套 UPnP 服务',`<div id="upnp-status" class="panel-body muted" role="status">正在读取 UPnP 管理设置…</div><div id="upnp-mappings"></div>`,`<div class="actions">${ibtn('刷新 UPnP 映射','upnp-refresh','refresh')}${btn('连接设置','upnp-settings','settings')}${btn('添加映射','upnp-add','plus')}</div>`)}${panel('设备黑名单','只限制设备申请映射，不限制普通上网',`<div id="upnp-blacklist" class="panel-body muted">正在读取设备策略…</div>`,`<div class="actions">${btn('添加设备','upnp-block-add','plus')}${btn('应用到路由器','upnp-policy','shield')}</div>`)}</div>`;
+ const view=upnpState?upnpView():null;
+ queueMicrotask(()=>{syncUPnPControls();refreshUPnP();});
+ return `<div class="upnp-page">${panel('原厂 UPnP 映射','直接管理路由器现有映射，不启动另一套 UPnP 服务',`<div id="upnp-status" class="panel-body muted" role="status">${view?view.status:'正在读取 UPnP 管理设置…'}</div><div id="upnp-mappings">${view?view.mappings:''}</div>`,`<div class="actions">${ibtn('刷新 UPnP 映射','upnp-refresh','refresh')}${btn('连接设置','upnp-settings','settings')}${btn('添加映射','upnp-add','plus')}</div>`)}${panel('设备黑名单','只限制设备申请映射，不限制普通上网',`<div id="upnp-blacklist"${view?'':' class="panel-body muted"'}>${view?view.blocks:'正在读取设备策略…'}</div>`,`<div class="actions">${btn('添加设备','upnp-block-add','plus')}${btn('应用到路由器','upnp-policy','shield')}</div>`)}</div>`;
 }
 function upnpCanWrite(m){return upnpState?.config.writePolicy==='service'||Boolean(upnpState?.clientIP&&m.internalIP===upnpState.clientIP);}
 function upnpMappingButtons(m,i){const enabled=upnpCanWrite(m),suffix=enabled?'':'（安全模式：仅可查看）';return ibtn('编辑映射'+suffix,'upnp-edit:'+i,'edit').replace('<button',enabled?'<button':'<button disabled aria-disabled="true"')+ibtn('删除映射'+suffix,'upnp-delete:'+i,'trash').replace('<button',enabled?'<button':'<button disabled aria-disabled="true"');}
@@ -15,20 +18,28 @@ function upnpModeDialog(allow){
  dialog(allow?'允许跨设备管理':'恢复原厂安全模式',actionNote(allow?'将关闭原厂 miniupnpd 安全模式并短暂重启 UPnP。局域网客户端也可能管理其他设备的映射，安全隔离降低。请通过 HTTPS 或 SSH 隧道操作。':'将恢复原厂安全模式并短暂重启 UPnP。之后其他设备的映射仅可查看。',true)+actionNote('先保存租约并核对现有映射；核对失败或操作中断会请求回滚。只适配已核实的 OpenWrt miniupnpd 启动脚本，不重启 Docker 或整个防火墙。')+picker('hostId','路由器 root SSH',hosts[0].id,hosts.map(h=>[h.id,h.name+' · '+h.address]))+field('adminPassword','管理员密码','','','password')+(state.twoFactor?.enabled?twoFactorCodeField():'')+field('password','本次 SSH 密码','','私钥方式可留空，不会保存','password')+area('privateKey','本次 SSH 私钥（可选）','','不会保存'),async d=>{const result=await api('upnp/mode','POST',{...d,enabled:allow});await refreshUPnP();nextTwoFactorDialog(()=>dialog('UPnP 模式切换结果',actionNote(result.message),async()=>{},'知道了'));},'授权切换并核对');
 }
 document.addEventListener('change',e=>{if(e.target.name==='upnpCrossDevice'){const allow=e.target.checked;e.target.checked=upnpState?.config.writePolicy==='service';upnpModeDialog(allow);}});
-function upnpRender(){
- const status=$('#upnp-status'),mappings=$('#upnp-mappings'),blocks=$('#upnp-blacklist');if(!status||!upnpState)return;
+function upnpView(){
  const s=upnpState,c=s.config;
- status.innerHTML=(s.error?actionNote(s.error,true):'')+`<div class="upnp-connection"><span>${pill(!c.enabled?'管理已停用':s.error?'读取失败':'已连接',!c.enabled?'':s.error?'error':'good')}</span><span class="muted">${esc(c.descriptionUrl||'尚未配置路由器地址')}${c.interface?' · '+esc(c.interface):''}</span></div>`+toggle('upnpCrossDevice','允许跨设备管理映射',c.writePolicy==='service','开启后关闭原厂安全模式；关闭后恢复。需二次验证及 SSH 授权，并短暂重启 UPnP。')+actionNote(c.writePolicy==='service'?'最近配置为跨设备管理；请以原厂实际权限为准。'+(c.writePolicyUpdatedAt?' 最近设置：'+new Date(c.writePolicyUpdatedAt).toLocaleString():''):'安全模式：其他设备的映射仅可查看，编辑与删除已禁用。本机请求地址：'+(s.clientIP||'尚未获取'))+(s.truncated?actionNote('映射超过 512 条，仅展示前 512 条，请减少映射或使用原厂工具核对。',true):'');
- mappings.innerHTML=c.enabled?(s.mappings?.length?s.mappings.map((m,i)=>`<article class="upnp-mapping"><div><strong>${esc(m.description||'未命名映射')}</strong><p>${pill(m.protocol,'blue')} ${esc(String(m.externalPort))} <span class="flow-arrow">→</span> ${esc(m.internalIP)}:${esc(String(m.internalPort))}</p><small>${m.enabled?'已启用':'已停用'} · ${m.leaseSeconds?`剩余租期约 ${Math.ceil(m.leaseSeconds/60)} 分钟`:'永久租期'}${m.remoteHost?' · 限来源 '+esc(m.remoteHost):''}</small></div><div class="actions">${upnpMappingButtons(m,i)}</div></article>`).join(''):s.error?'':empty('暂无映射','设备自动申请或手动添加的映射会显示在这里。')):empty('UPnP 管理尚未启用','连接设置只启用 LinkNest 管理，不会替你开启路由器 UPnP。');
- blocks.className='';
- blocks.innerHTML=`<div class="panel-body"><div class="upnp-policy-state">${pill(s.policyPending?'有待应用修改':s.nativePolicyApplied?'已写入原厂配置':'尚未应用',s.policyPending?'blue':'')}<small>${s.appliedAt?'最近成功应用：'+esc(new Date(s.appliedAt).toLocaleString()):'名单先保存，点击“应用到路由器”后才实际限制请求。'}</small></div><p class="split-note">持久规则由原厂防火墙加载；此处记录最近应用结果，不代表已重新验证路由器当前状态。原厂已有的其他黑名单保持不变。</p></div>`+(c.blacklist?.length?c.blacklist.map(b=>`<article class="upnp-mapping"><div><strong>${esc(b.name||'未命名设备')}</strong><p>${esc(b.address)}</p><small>${s.policyPending?(b.enabled?'配置已启用，待应用':'配置已停用，待应用解除'):(b.enabled?'已写入原厂配置':'已应用停用配置；其他原厂限制不变')}</small></div><div class="actions">${ibtn('编辑设备','upnp-block-edit:'+b.id,'edit')}${ibtn('删除设备','upnp-block-delete:'+b.id,'trash')}</div></article>`).join(''):empty('暂无自定义黑名单','支持私网 IPv4、网段和 MAC；MAC 可避免 DHCP 地址变化。'));
+ const status=(upnpReadError?actionNote('刷新失败，正在显示上次读取结果：'+upnpReadError,true):'')+(s.error?actionNote(s.error,true):'')+`<div class="upnp-connection"><span>${pill(!c.enabled?'管理已停用':s.error?'读取失败':'已连接',!c.enabled?'':s.error?'error':'good')}</span><span class="muted">${esc(c.descriptionUrl||'尚未配置路由器地址')}${c.interface?' · '+esc(c.interface):''}</span></div>`+toggle('upnpCrossDevice','允许跨设备管理映射',c.writePolicy==='service','开启后关闭原厂安全模式；关闭后恢复。需二次验证及 SSH 授权，并短暂重启 UPnP。')+actionNote(c.writePolicy==='service'?'最近配置为跨设备管理；请以原厂实际权限为准。'+(c.writePolicyUpdatedAt?' 最近设置：'+new Date(c.writePolicyUpdatedAt).toLocaleString():''):'安全模式：其他设备的映射仅可查看，编辑与删除已禁用。本机请求地址：'+(s.clientIP||'尚未获取'))+(s.truncated?actionNote('映射超过 512 条，仅展示前 512 条，请减少映射或使用原厂工具核对。',true):'');
+ const mappings=c.enabled?(s.mappings?.length?s.mappings.map((m,i)=>`<article class="upnp-mapping"><div><strong>${esc(m.description||'未命名映射')}</strong><p>${pill(m.protocol,'blue')} ${esc(String(m.externalPort))} <span class="flow-arrow">→</span> ${esc(m.internalIP)}:${esc(String(m.internalPort))}</p><small>${m.enabled?'已启用':'已停用'} · ${m.leaseSeconds?`剩余租期约 ${Math.ceil(m.leaseSeconds/60)} 分钟`:'永久租期'}${m.remoteHost?' · 限来源 '+esc(m.remoteHost):''}</small></div><div class="actions">${upnpMappingButtons(m,i)}</div></article>`).join(''):s.error?'':empty('暂无映射','设备自动申请或手动添加的映射会显示在这里。')):empty('UPnP 管理尚未启用','连接设置只启用 LinkNest 管理，不会替你开启路由器 UPnP。');
+ const blocks=`<div class="panel-body"><div class="upnp-policy-state">${pill(s.policyPending?'有待应用修改':s.nativePolicyApplied?'已写入原厂配置':'尚未应用',s.policyPending?'blue':'')}<small>${s.appliedAt?'最近成功应用：'+esc(new Date(s.appliedAt).toLocaleString()):'名单先保存，点击“应用到路由器”后才实际限制请求。'}</small></div><p class="split-note">持久规则由原厂防火墙加载；此处记录最近应用结果，不代表已重新验证路由器当前状态。原厂已有的其他黑名单保持不变。</p></div>`+(c.blacklist?.length?c.blacklist.map(b=>`<article class="upnp-mapping"><div><strong>${esc(b.name||'未命名设备')}</strong><p>${esc(b.address)}</p><small>${s.policyPending?(b.enabled?'配置已启用，待应用':'配置已停用，待应用解除'):(b.enabled?'已写入原厂配置':'已应用停用配置；其他原厂限制不变')}</small></div><div class="actions">${ibtn('编辑设备','upnp-block-edit:'+b.id,'edit')}${ibtn('删除设备','upnp-block-delete:'+b.id,'trash')}</div></article>`).join(''):empty('暂无自定义黑名单','支持私网 IPv4、网段和 MAC；MAC 可避免 DHCP 地址变化。'));
+ return {status,mappings,blocks};
+}
+function upnpRender(){
+ if(!upnpState)return;
+ const view=upnpView();
+ for(const [id,content] of [['upnp-status',view.status],['upnp-mappings',view.mappings],['upnp-blacklist',view.blocks]]){const el=$('#'+id);if(!el)continue;if(id==='upnp-blacklist')el.className='';if(el.upnpContent!==content){if(el.innerHTML!==content)el.innerHTML=content;el.upnpContent=content;}}
 }
 async function refreshUPnP(){
- if(upnpRefreshing||page!=='forwards'||forwardTab()!=='upnp'||!loggedIn)return;
- upnpRefreshing=true;
- try{upnpState=await api('upnp/state');if(page==='forwards'&&forwardTab()==='upnp')upnpRender();}
- catch(e){const el=$('#upnp-status');if(el)el.innerHTML=actionNote(e.message,true);}
- finally{upnpRefreshing=false;}
+ if(page!=='forwards'||forwardTab()!=='upnp'||!loggedIn)return;
+ if(upnpRequest)return upnpRequest;
+ const epoch=upnpEpoch;upnpRefreshing=true;syncUPnPControls();
+ upnpRequest=(async()=>{
+  try{const next=await api('upnp/state');if(epoch!==upnpEpoch||!loggedIn)return;upnpState=next;upnpReadError='';if(page==='forwards'&&forwardTab()==='upnp')upnpRender();}
+  catch(e){if(epoch!==upnpEpoch||!loggedIn)return;upnpReadError=e.message;if(page==='forwards'&&forwardTab()==='upnp'){if(upnpState)upnpRender();else{const el=$('#upnp-status');if(el)el.innerHTML=actionNote(e.message,true);}}}
+  finally{if(epoch===upnpEpoch){upnpRefreshing=false;upnpRequest=null;syncUPnPControls();}}
+ })();
+ return upnpRequest;
 }
 async function upnpSaveConfig(c){await api('upnp/config','PUT',c);upnpState={...(upnpState||{}),config:c};await refreshUPnP();}
 function upnpSettings(){const c=upnpState?.config||{enabled:false,descriptionUrl:'',interface:'',lanZone:'lan',blacklist:[]};

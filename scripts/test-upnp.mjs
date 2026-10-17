@@ -6,7 +6,7 @@ const ctx={location:{hash:'#/forwards/upnp'},document:{addEventListener(){}},que
  state:{interfaces:[{name:'br-lan'}],config:{sshHosts:[]},twoFactor:{enabled:false}},
  esc:v=>String(v??'').replaceAll('<','&lt;'),pill:String,icon:()=>'',ibtn:()=>'<button>test</button>',btn:()=>'',panel:(t,s,b)=>b,actionNote:s=>s,empty:(t,s)=>t+s,notice:String,
  field:(n,l,v)=>n+':'+v,picker:(n,l,v)=>n+':'+v,toggle:n=>n,area:n=>n,uid:()=> 'new-id',
- dialog:(title,body,save)=>{dialogResult={title,body,save}},api:async(path,method,data)=>{if(path==='upnp/state')return fixture;saved={path,method,data};return{message:'done'}},toast(){},navigatePage:(...p)=>{ctx.route=p},$:()=>null,
+ dialog:(title,body,save)=>{dialogResult={title,body,save}},api:async(path,method,data)=>{if(path==='upnp/state')return fixture;saved={path,method,data};return{message:'done'}},toast(){},navigatePage:(...p)=>{ctx.route=p},$:()=>null,$$:()=>[],
 };vm.createContext(ctx);vm.runInContext(fs.readFileSync(new URL('../web/upnp.js',import.meta.url),'utf8'),ctx);
 assert.equal(ctx.forwardTab(),'upnp');assert.match(ctx.forwardTabs(),/路由器 UPnP/);assert.match(ctx.upnpPage(),/upnp-mappings/);
 await ctx.upnpAction('forward-tab:rules');assert.equal(ctx.route.join('/'),'forwards/rules');
@@ -22,4 +22,23 @@ vm.runInContext("upnpState.config.writePolicy='own';upnpState.clientIP='192.168.
 assert.equal(ctx.upnpCanWrite(fixture.mappings[0]),false);assert.match(ctx.upnpMappingButtons(fixture.mappings[0],0),/disabled/);
 assert.equal(ctx.upnpCanWrite({internalIP:'192.168.1.1'}),true);
 assert.match(source,/未保存|不会保存/);assert.ok(!source.includes('localStorage'));assert.match(source,/policyPending/);
+// Cached data is present synchronously even if the whole page is rendered again.
+assert.doesNotMatch(ctx.upnpPage(),/正在读取/);assert.match(ctx.upnpPage(),/6881/);
+const elements=Object.fromEntries(['upnp-status','upnp-mappings','upnp-blacklist'].map(id=>[id,{innerHTML:'',className:''}]));
+ctx.$=s=>elements[s.slice(1)]||null;ctx.upnpRender();
+const oldMappings=elements['upnp-mappings'].innerHTML,oldBlocks=elements['upnp-blacklist'].innerHTML;
+let complete,requests=0;
+ctx.api=()=>{requests++;return new Promise(resolve=>{complete=resolve})};
+const pending=ctx.refreshUPnP(),duplicate=ctx.refreshUPnP();
+assert.equal(requests,1);assert.equal(elements['upnp-mappings'].innerHTML,oldMappings);assert.doesNotMatch(ctx.upnpPage(),/正在读取/);
+complete(fixture);await Promise.all([pending,duplicate]);
+assert.equal(elements['upnp-mappings'].innerHTML,oldMappings);
+ctx.api=async()=>{throw Error('timeout')};await ctx.refreshUPnP();
+assert.equal(elements['upnp-mappings'].innerHTML,oldMappings);assert.equal(elements['upnp-blacklist'].innerHTML,oldBlocks);
+assert.match(elements['upnp-status'].innerHTML,/上次读取结果.*timeout/);
+ctx.api=async()=>fixture;await ctx.refreshUPnP();assert.doesNotMatch(elements['upnp-status'].innerHTML,/timeout/);
+// A response from the previous login must not repopulate the new session cache.
+ctx.api=()=>new Promise(resolve=>{complete=resolve});const stale=ctx.refreshUPnP();
+ctx.resetUPnPState();complete(fixture);await stale;
+assert.match(ctx.upnpPage(),/正在读取/);assert.equal(vm.runInContext('upnpState',ctx),null);
 console.log('UPnP tabs, mapping fields, delete confirmation, trusted SSH requirement and no credential persistence passed.');

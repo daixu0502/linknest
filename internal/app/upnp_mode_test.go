@@ -33,6 +33,8 @@ func TestUPnPModeTwoPhaseScript(t *testing.T) {
 			configFile := filepath.Join(root, "etc/config/upnpd")
 			os.WriteFile(configFile, b, 0600)
 			init := `#!/bin/sh
+# The service and any daemon it spawns must not inherit the transaction lock.
+[ ! -e "/proc/$$/fd/9" ] || { echo 'service inherited transaction lock' >&2; exit 1; }
 tmpconf="/var/etc/miniupnpd.conf"
 service_start() {
  printf '%s\000' "$@" >"$LINKNEST_UPNP_TOOL_ROOT/proc/98765/cmdline"
@@ -40,6 +42,7 @@ service_start() {
  secure=$(uci -q get upnpd.config.secure_mode)
  if [ "$secure" = 0 ]; then echo secure_mode=no >"$tmpconf"; else echo secure_mode=yes >"$tmpconf"; fi
 }
+
 case "$1" in
 start)
  service_start /usr/sbin/miniupnpd -S -f $tmpconf
@@ -95,6 +98,24 @@ esac
 				t.Fatal("lease changed")
 			}
 		})
+	}
+}
+
+func TestUPnPModeServiceDoesNotInheritLock(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		calls := 0
+		for _, line := range strings.Split(buildUPnPModeScript(allow), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "/etc/init.d/miniupnpd ") {
+				calls++
+				if !strings.Contains(line, " 9>&- ") {
+					t.Fatalf("service invocation can leak the transaction lock: %s", line)
+				}
+			}
+		}
+		if calls != 4 {
+			t.Fatalf("expected both forward and rollback start/stop paths, got %d", calls)
+		}
 	}
 }
 

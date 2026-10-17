@@ -2,8 +2,10 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
 const {chromium}=require('playwright');
 (async()=>{
+ let upnpDelay=0,upnpFailure=false;
  const root=path.resolve(__dirname,'../web'),server=http.createServer((req,res)=>{
-  if(req.url.startsWith('/api/upnp/state')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({config:{enabled:true,writePolicy:'service',descriptionUrl:'http://192.168.1.1:5351/rootDesc.xml',interface:'br-lan',lanZone:'lan',blacklist:[{id:'qa',name:'Blocked device',address:'192.168.1.20/32',enabled:true}]},mappings:[{description:'Sample device',protocol:'TCP',externalPort:6881,internalIP:'192.168.1.2',internalPort:6881,enabled:true,leaseSeconds:3600}],policyPending:true}));return;}
+  if(req.url.startsWith('/api/upnp/state')){setTimeout(()=>{res.setHeader('Content-Type','application/json');if(upnpFailure){res.statusCode=503;res.end(JSON.stringify({error:'QA refresh failed'}));return;}res.end(JSON.stringify({config:{enabled:true,writePolicy:'service',descriptionUrl:'http://192.168.1.1:5351/rootDesc.xml',interface:'br-lan',lanZone:'lan',blacklist:[{id:'qa',name:'Blocked device',address:'192.168.1.20/32',enabled:true}]},mappings:[{description:'Sample device',protocol:'TCP',externalPort:6881,internalIP:'192.168.1.2',internalPort:6881,enabled:true,leaseSeconds:3600}],policyPending:true}));},upnpDelay);return;}
+  if(req.url.startsWith('/api/state')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({version:'test',interfaces:[{name:'br-lan'}],config:{rules:[],sshHosts:[]}}));return;}
   if(req.url.startsWith('/api/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({initialized:true,authenticated:false}));return;}
   const file=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]==='/'?'/index.html':req.url.split('?')[0]));
   if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}
@@ -34,6 +36,21 @@ const {chromium}=require('playwright');
    await page.evaluate(()=>{loggedIn=true;state={version:'test',interfaces:[{name:'br-lan'}],config:{rules:[],sshHosts:[]}};location.hash='#/forwards/upnp';page='forwards';render();});
    await page.locator('.upnp-mapping').first().waitFor();assert.equal(await page.locator('[data-action="add:forwards"]').count(),0);
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   upnpDelay=300;
+   await page.evaluate(()=>{window.qaMappings=document.querySelector('#upnp-mappings');window.qaMapRow=qaMappings.firstElementChild;window.qaHeight=document.querySelector('.upnp-page').getBoundingClientRect().height;window.qaLoadingSeen=false;window.qaObserver=new MutationObserver(()=>{if(document.querySelector('.upnp-page')?.textContent.includes('正在读取'))window.qaLoadingSeen=true;});qaObserver.observe(document.querySelector('#page-content'),{subtree:true,childList:true,characterData:true});});
+   await page.evaluate(()=>refresh());
+   await page.evaluate(()=>{window.qaRefresh=refresh(true);});
+   await page.waitForFunction(()=>upnpRefreshing);
+   assert.equal(await page.evaluate(()=>qaMappings===document.querySelector('#upnp-mappings')&&qaMapRow===qaMappings.firstElementChild&&qaHeight===document.querySelector('.upnp-page').getBoundingClientRect().height),true);
+   await page.evaluate(()=>qaRefresh);
+   assert.equal(await page.evaluate(()=>!qaLoadingSeen&&qaMapRow===document.querySelector('#upnp-mappings').firstElementChild),true);
+   upnpFailure=true;await page.evaluate(()=>refreshUPnP());
+   assert.equal(await page.evaluate(()=>qaMapRow===document.querySelector('#upnp-mappings').firstElementChild),true);
+   assert.match(await page.locator('#upnp-status').innerText(),/上次读取结果/);
+   upnpFailure=false;upnpDelay=0;await page.evaluate(()=>refreshUPnP());
+   await page.evaluate(()=>{render();});
+   assert.doesNotMatch(await page.locator('.upnp-page').innerText(),/正在读取/);
+   await page.waitForFunction(()=>!upnpRefreshing);await page.evaluate(()=>qaObserver.disconnect());
    await page.locator('[data-action="upnp-edit:0"]').click();await page.locator('#dialog-form [name=externalPort]').waitFor();
    assert.ok(await page.evaluate(()=>{const e=document.querySelector('#modal');return e.getBoundingClientRect().right<=innerWidth&&e.scrollWidth<=e.clientWidth;}));
    assert.deepEqual(errors,[]);await page.close();

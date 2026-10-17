@@ -21,7 +21,7 @@ import (
 	"sync"
 )
 
-const version = "1.1.0"
+const version = "1.1.1"
 const configSchema = 4
 
 type Rule struct {

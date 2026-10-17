@@ -55,13 +55,13 @@ cleanup() {
   currentinit=$(md5sum /etc/init.d/miniupnpd | cut -d ' ' -f 1)
   currentconfig=$(md5sum /etc/config/upnpd | cut -d ' ' -f 1)
   if { [ "$currentinit" = "$newinit" ] || [ "$currentinit" = "$oldinit" ]; } && { [ "$currentconfig" = "$newconfig" ] || [ "$currentconfig" = "$oldconfig" ]; }; then
-   /etc/init.d/miniupnpd stop >/dev/null 2>&1 || true
+   /etc/init.d/miniupnpd stop 9>&- >/dev/null 2>&1 || true
    cp -p "$work/init-old" /etc/init.d/.linknest-upnp-restore-$$
    mv /etc/init.d/.linknest-upnp-restore-$$ /etc/init.d/miniupnpd
    cp "$work/config-old" /etc/config/.linknest-upnp-restore-$$
    mv /etc/config/.linknest-upnp-restore-$$ /etc/config/upnpd
    cp "$work/leases" "$lease"
-   /etc/init.d/miniupnpd start >/dev/null 2>&1 || echo '原厂 UPnP 回滚启动失败，请手动检查' >&2
+   /etc/init.d/miniupnpd start 9>&- >/dev/null 2>&1 || echo '原厂 UPnP 回滚启动失败，请手动检查' >&2
   else
    echo '发现并发修改，未覆盖原厂文件；请手动核对安全模式' >&2
   fi
@@ -84,11 +84,11 @@ cp "$work/upnpd" /etc/config/.linknest-upnp-new-$$
 changed=1
 mv /etc/init.d/.linknest-upnp-new-$$ /etc/init.d/miniupnpd
 mv /etc/config/.linknest-upnp-new-$$ /etc/config/upnpd
-/etc/init.d/miniupnpd stop >/dev/null 2>&1
+/etc/init.d/miniupnpd stop 9>&- >/dev/null 2>&1
 # The final lease file can include client updates made after our first snapshot.
 if [ -s "$lease" ]; then cp "$lease" "$work/leases"; fi
 cp "$work/leases" "$lease"
-/etc/init.d/miniupnpd start >/dev/null 2>&1
+/etc/init.d/miniupnpd start 9>&- >/dev/null 2>&1
 pid=$(cat /var/run/miniupnpd.pid)
 case "$pid" in ''|*[!0-9]*) echo '原厂进程标识无效' >&2; exit 1 ;; esac
 [ -r "/proc/$pid/cmdline" ] || { echo '原厂 UPnP 未启动' >&2; exit 1; }

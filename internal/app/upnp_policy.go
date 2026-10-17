@@ -85,7 +85,7 @@ umask 077
 for cmd in uci iptables ip6tables iptables-restore ip6tables-restore md5sum flock mktemp; do command -v "$cmd" >/dev/null || { echo "缺少原厂命令: $cmd" >&2; exit 1; }; done
 [ -f /etc/config/firewall ] || { echo '仅支持 OpenWrt/fw3 原厂防火墙' >&2; exit 1; }
 exec 9>/var/lock/linknest-upnp-policy.lock
-flock -n 9 || { echo '其他黑名单操作正在执行' >&2; exit 1; }
+flock -n 9 || { echo '原厂 UPnP 配置锁被占用，可能有操作正在执行或旧版本服务持有遗留锁；请稍后重试，持续出现时检查服务锁' >&2; exit 1; }
 [ -z "$(uci -q changes firewall)" ] || { echo '原厂防火墙有未提交修改，请先处理' >&2; exit 1; }
 zone_found=0
 for section in $(uci -q show firewall | sed -n 's/^firewall\.\([^=]*\)=zone$/\1/p'); do
