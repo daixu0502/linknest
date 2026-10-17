@@ -56,7 +56,7 @@ func upnpPortConflicts(ports []int, mappings []UPnPMapping) []UPnPMapping {
 func (a *App) upnpPortsStatus(rules []Rule) map[string]any {
 	c, _, _, loadError := a.upnp.snapshot()
 	ports := upnpForwardPorts(rules)
-	return map[string]any{"enabled": c.PortProtection, "pending": c.PortProtection && !slices.Equal(ports, c.ProtectedPorts), "error": loadError}
+	return map[string]any{"enabled": c.PortProtection, "managementEnabled": c.Enabled, "forwardPorts": ports, "protectedPorts": c.ProtectedPorts, "updatedAt": c.PortsUpdatedAt, "pending": c.PortProtection && !slices.Equal(ports, c.ProtectedPorts), "error": loadError}
 }
 
 func buildUPnPPortsScript(ports []int) (string, error) {
@@ -135,7 +135,7 @@ for section in $(U -q show upnpd | sed -n 's/^upnpd\.\(lnport_[a-zA-Z0-9_]*\)=.*
  U delete "upnpd.$section"
 done
 ` + commands.String() + `
-U commit upnpd
+` + upnpMaterializeUCI("upnpd") + `
 [ "$(md5sum /etc/config/upnpd | cut -d ' ' -f 1)" = "$oldsum" ] && [ "$(md5sum /etc/init.d/miniupnpd | cut -d ' ' -f 1)" = "$initsum" ] && [ -z "$(uci -q changes upnpd)" ] || { echo '原厂配置已并发修改，中止应用' >&2; exit 1; }
 newsum=$(md5sum "$work/upnpd" | cut -d ' ' -f 1)
 cp "$work/upnpd" /etc/config/.linknest-ports-new-$$

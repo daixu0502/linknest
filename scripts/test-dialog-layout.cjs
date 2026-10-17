@@ -15,7 +15,7 @@ const {chromium}=require('playwright');
  let browser;
  try{
   browser=await chromium.launch({headless:true,...(process.env.EDGE_PATH?{executablePath:process.env.EDGE_PATH}:{})});
-  for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+  for(const viewport of [{width:1440,height:900},{width:900,height:800},{width:390,height:844}]){
    const page=await browser.newPage({viewport});const errors=[];page.on('pageerror',e=>errors.push(e.message));
    await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.locator('#auth-form').waitFor();
    for(const backend of ['proxy','bookmarks','wol']){
@@ -34,7 +34,11 @@ const {chromium}=require('playwright');
    await page.locator('.action-note').waitFor();assert.equal(await page.locator('#modal .notice-actions').count(),0);assert.match(await page.locator('.action-note').innerText(),/断开/);
    await page.evaluate(()=>closeModal());await page.waitForFunction(()=>!document.querySelector('#dialog-form'));
    await page.evaluate(()=>{loggedIn=true;state={version:'test',interfaces:[{name:'br-lan'}],config:{rules:[],sshHosts:[]}};location.hash='#/forwards/upnp';page='forwards';render();});
-   await page.locator('.upnp-mapping').first().waitFor();assert.equal(await page.locator('[data-action="add:forwards"]').count(),0);
+   await page.locator('.upnp-mapping').first().waitFor();
+   assert.equal(await page.locator('#upnp-ports').count(),0);
+   const stackGaps=await page.locator('#upnp-status').evaluate(el=>[...el.children].slice(1).map((child,i)=>child.getBoundingClientRect().top-el.children[i].getBoundingClientRect().bottom));
+   assert.ok(stackGaps.every(g=>g>=15),JSON.stringify(stackGaps));
+   if(process.env.LINKNEST_QA_OUTPUT)await page.screenshot({path:path.join(process.env.LINKNEST_QA_OUTPUT,`upnp-${viewport.width}.png`),fullPage:true});assert.equal(await page.locator('[data-action="add:forwards"]').count(),0);
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    upnpDelay=300;
    await page.evaluate(()=>{window.qaMappings=document.querySelector('#upnp-mappings');window.qaMapRow=qaMappings.firstElementChild;window.qaHeight=document.querySelector('.upnp-page').getBoundingClientRect().height;window.qaLoadingSeen=false;window.qaObserver=new MutationObserver(()=>{if(document.querySelector('.upnp-page')?.textContent.includes('正在读取'))window.qaLoadingSeen=true;});qaObserver.observe(document.querySelector('#page-content'),{subtree:true,childList:true,characterData:true});});
@@ -53,6 +57,16 @@ const {chromium}=require('playwright');
    await page.waitForFunction(()=>!upnpRefreshing);await page.evaluate(()=>qaObserver.disconnect());
    await page.locator('[data-action="upnp-edit:0"]').click();await page.locator('#dialog-form [name=externalPort]').waitFor();
    assert.ok(await page.evaluate(()=>{const e=document.querySelector('#modal');return e.getBoundingClientRect().right<=innerWidth&&e.scrollWidth<=e.clientWidth;}));
+   await page.evaluate(()=>closeModal());await page.waitForFunction(()=>!document.querySelector('#dialog-form'));
+   await page.evaluate(()=>{state.upnpPorts={managementEnabled:true,enabled:true,pending:true,forwardPorts:[3389,6881],protectedPorts:[3389]};state.config.rules=[];state.config.sshHosts=[{id:'router',name:'Router',username:'root',address:'192.168.1.1:22',fingerprint:'verified'}];resetUPnPState();location.hash='#/forwards/rules';render();});
+   await page.locator('#upnp-ports').waitFor();
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   assert.equal(await page.locator('#upnp-ports .notice-actions').count(),0);
+   const portGaps=await page.locator('#upnp-ports').evaluate(el=>[...el.children].slice(1).map((child,i)=>child.getBoundingClientRect().top-el.children[i].getBoundingClientRect().bottom));
+   assert.ok(portGaps.every(g=>g>=15),JSON.stringify(portGaps));
+   if(process.env.LINKNEST_QA_OUTPUT)await page.screenshot({path:path.join(process.env.LINKNEST_QA_OUTPUT,`ports-${viewport.width}.png`),fullPage:true});
+   await page.locator('[data-action="upnp-ports-sync"]').click();await page.locator('#dialog-form [name=adminPassword]').waitFor();
+   assert.match(await page.locator('#modal').innerText(),/3389、6881/);
    assert.deepEqual(errors,[]);await page.close();
   }
   console.log('Desktop/mobile dialog conditional spacing, bounds and non-dismissible operation notes passed.');

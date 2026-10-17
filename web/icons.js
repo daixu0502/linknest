@@ -44,7 +44,7 @@ async function iconSourceAction(key){
  }
  if(!old)throw Error('图标源已不存在，请刷新');
  if(action==='icon-source-toggle'){old.disabled=!old.disabled;await save(sources);return true;}
- if(action==='icon-source-delete'){dialog('删除图标源',notice('仅删除图标源配置，不会清除已经选用的站点图标。'),async()=>save(sources.filter(x=>x.id!==id)),'删除');return true;}
+ if(action==='icon-source-delete'){dialog('删除图标源',actionNote('仅删除图标源配置，不会清除已经选用的站点图标。'),async()=>save(sources.filter(x=>x.id!==id)),'删除');return true;}
  return false;
 }
 let iconSearchController;

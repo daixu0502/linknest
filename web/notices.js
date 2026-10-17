@@ -3,10 +3,13 @@
 const noticeSessionKey='linknest-help-session-v1', noticePermanentKey='linknest-help-hidden-v1';
 function readNoticeSet(storageName,key){try{const v=JSON.parse(window[storageName].getItem(key)||'[]');return new Set(Array.isArray(v)?v.filter(x=>typeof x==='string'):[]);}catch{return new Set();}}
 let hiddenNotices=readNoticeSet('sessionStorage',noticeSessionKey), mutedNotices=readNoticeSet('localStorage',noticePermanentKey);
-// Operation details must survive help dismissal, including previously muted text.
+// Help is dismissible; descriptions/status are inline; confirmations/errors
+// remain visible. Never use a help banner for a live status or dialog consent.
+function functionNote(text){return `<p class="function-note">${esc(text)}</p>`;}
+function statusNote(text){return `<p class="status-note" role="status">${esc(text)}</p>`;}
 function actionNote(text,warning=false){return `<div class="action-note${warning?' warning':''}" role="${warning?'alert':'note'}">${icon('info')}<span>${esc(text)}</span></div>`;}
 function notice(text,warning=false,id=''){
- if(warning)return `<div class="notice warning" role="alert">${icon('info')}<span>${esc(text)}</span></div>`;
+ if(warning)return actionNote(text,true);
  const key=id||text;
  if(hiddenNotices.has(key)||mutedNotices.has(key))return '';
  const action=esc(encodeURIComponent(key));

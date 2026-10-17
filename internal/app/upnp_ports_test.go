@@ -24,7 +24,22 @@ func TestUPnPPortsNativeDryRun(t *testing.T) {
 	if !ok || strings.Contains(prefix, "changed=1") {
 		t.Fatal("unsafe dry-run boundary")
 	}
-	cmd := exec.Command("sh", "-c", prefix+"\necho LINKNEST_PORTS_DRY_RUN_OK\n")
+	// Verify the materialized file through the stock renderer, not the staged
+	// UCI view (which can conceal an unmerged custom delta).
+	render := `(
+ set +eu
+ . /lib/functions.sh
+ . /etc/init.d/miniupnpd
+ UCI_CONFIG_DIR="$work/verify"
+ config_load upnpd || exit 1
+ tmpconf="$work/native-rendered"
+ : >"$tmpconf"
+ config_foreach conf_rule_add perm_rule "$tmpconf"
+)
+sed -n '/^allow /p;/^deny /p' "$work/native-rendered" | head -n 2 >"$work/native-first"
+cmp -s "$work/expected" "$work/native-first" || { echo '原厂未读取物化保护规则' >&2; exit 1; }
+`
+	cmd := exec.Command("sh", "-c", prefix+render+"\necho LINKNEST_PORTS_DRY_RUN_OK\n")
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "LINKNEST_PORTS_DRY_RUN_OK") {
 		t.Fatalf("%v %s", err, out)

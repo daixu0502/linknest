@@ -61,7 +61,7 @@ func TestUPnPPolicyTransaction(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires POSIX shell; covered in ARM64 isolation")
 	}
-	for _, mode := range []string{"success", "live6", "syntax6", "concurrent", "pending", "foreign-owner"} {
+	for _, mode := range []string{"success", "live6", "syntax6", "concurrent", "pending", "foreign-owner", "export-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			for _, dir := range []string{"etc/config", "var/lock", "tmp", "bin", "state"} {
@@ -121,7 +121,7 @@ func TestUPnPPolicyTransaction(t *testing.T) {
 					t.Fatal("overwrote concurrent change")
 				}
 			}
-			if mode == "live6" || mode == "syntax6" || mode == "pending" || mode == "foreign-owner" {
+			if mode == "live6" || mode == "syntax6" || mode == "pending" || mode == "foreign-owner" || mode == "export-failure" {
 				if string(current) != string(data) {
 					t.Fatal("failed operation changed original config", string(current), string(out))
 				}
@@ -171,6 +171,7 @@ func TestUPnPToolHelper(t *testing.T) {
 	}
 	if tool == "uci" {
 		base := filepath.Join(root, "etc/config")
+		delta := ""
 		i := 0
 		for i < len(args) && strings.HasPrefix(args[i], "-") {
 			switch args[i] {
@@ -179,6 +180,7 @@ func TestUPnPToolHelper(t *testing.T) {
 				base = args[i]
 			case "-P":
 				i++
+				delta = args[i]
 			}
 			i++
 		}
@@ -192,11 +194,27 @@ func TestUPnPToolHelper(t *testing.T) {
 			ref = args[1]
 		}
 		pkg := strings.SplitN(strings.SplitN(ref, "=", 2)[0], ".", 2)[0]
-		v := read(filepath.Join(base, pkg))
+		file := filepath.Join(base, pkg)
+		v := read(file)
+		if delta != "" {
+			file = filepath.Join(delta, pkg)
+			if _, err := os.Stat(file); err == nil {
+				v = read(file)
+			}
+		}
 		if action == "changes" {
 			if mode == "pending" {
 				fmt.Println("firewall.foreign.name='pending'")
 			}
+			exit(0)
+		}
+		// Match the affected stock UCI: commit succeeds but leaves custom deltas.
+		if action == "export" {
+			if mode == "export-failure" {
+				exit(1)
+			}
+			data, _ := json.Marshal(v)
+			fmt.Println(string(data))
 			exit(0)
 		}
 		if action == "commit" {
@@ -239,7 +257,7 @@ func TestUPnPToolHelper(t *testing.T) {
 			n = min(n, len(order))
 			order = append(order[:n], append([]string{p[1]}, order[n:]...)...)
 			v["fixture_order"] = map[string]string{"ids": strings.Join(order, " ")}
-			write(filepath.Join(base, pkg), v)
+			write(file, v)
 			exit(0)
 		}
 		if action == "set" {
@@ -259,7 +277,7 @@ func TestUPnPToolHelper(t *testing.T) {
 				field = p[2]
 			}
 			v[p[1]][field] = value
-			write(filepath.Join(base, pkg), v)
+			write(file, v)
 			exit(0)
 		}
 		p := strings.Split(ref, ".")
@@ -268,7 +286,7 @@ func TestUPnPToolHelper(t *testing.T) {
 		}
 		if action == "delete" {
 			delete(v, p[1])
-			write(filepath.Join(base, pkg), v)
+			write(file, v)
 			exit(0)
 		}
 		if action == "get" {

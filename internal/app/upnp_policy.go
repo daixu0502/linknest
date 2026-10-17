@@ -142,7 +142,7 @@ for section in $(U -q show firewall | sed -n 's/^firewall\.\(lnupnp_[a-zA-Z0-9_]
  U delete "firewall.$section"
 done
 ` + commands.String() + `
-U commit firewall
+` + upnpMaterializeUCI("firewall") + `
 cat >"$work/new4" <<'LINKNEST_FILTER4'
 ` + restore(filter4.String()) + `LINKNEST_FILTER4
 cat >"$work/new6" <<'LINKNEST_FILTER6'

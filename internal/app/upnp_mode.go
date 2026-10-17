@@ -75,7 +75,7 @@ sed -E 's@^[[:space:]]*service_start /usr/sbin/miniupnpd (-S )?-f \$tmpconf[[:sp
 chmod 755 "$work/init-new"
 sh -n "$work/init-new"
 uci -c "$work" -P "$work/delta" set upnpd.config.secure_mode=` + secure + `
-uci -c "$work" -P "$work/delta" commit upnpd
+` + upnpMaterializeUCI("upnpd") + `
 [ "$(md5sum /etc/init.d/miniupnpd | cut -d ' ' -f 1)" = "$oldinit" ] && [ "$(md5sum /etc/config/upnpd | cut -d ' ' -f 1)" = "$oldconfig" ] && [ -z "$(uci -q changes upnpd)" ] || { echo '原厂文件已并发修改，中止切换' >&2; exit 1; }
 newinit=$(md5sum "$work/init-new" | cut -d ' ' -f 1)
 newconfig=$(md5sum "$work/upnpd" | cut -d ' ' -f 1)

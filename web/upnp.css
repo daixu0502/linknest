@@ -1,1 +1,14 @@
 .upnp-page .panel-head{flex-wrap:wrap}.upnp-page .panel-head>.actions{margin-left:auto}.upnp-connection{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;font-size:12px;overflow-wrap:anywhere}.upnp-mapping{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 23px;border-top:1px solid var(--line);min-width:0}.upnp-mapping>div:first-child{min-width:0}.upnp-mapping strong{font-size:13px;overflow-wrap:anywhere}.upnp-mapping p{margin-top:7px;font-size:13px;overflow-wrap:anywhere}.upnp-mapping small{display:block;margin-top:7px;overflow-wrap:anywhere}.upnp-mapping .actions{flex-shrink:0}.upnp-policy-state{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}.upnp-page .split-note{line-height:1.7}@media(max-width:680px){.upnp-page .panel-head>.actions{margin-left:0;width:100%;justify-content:flex-start}.upnp-mapping{padding:16px;gap:12px;align-items:flex-start}.upnp-mapping .actions{gap:6px}.upnp-mapping .icon-button{width:34px;height:34px}.upnp-page .panel-head .button{padding:9px 11px}}
+.content-stack{display:flex;flex-direction:column;align-items:stretch;gap:18px;min-width:0}
+.content-stack>.switch-row,.content-stack>.upnp-policy-state,.content-stack>.function-note,.content-stack>.status-note,.content-stack>.action-note{margin:0}
+.content-stack>.switch-row{padding:0 0 16px;min-height:0}
+.content-stack>.switch-row>span{min-width:0;line-height:1.65}
+.content-stack>.switch-row small{display:block;margin-top:6px;line-height:1.65;overflow-wrap:anywhere}
+.content-stack>.switch-row:after{display:none}
+.content-stack>.switch-row .switch{flex-shrink:0}
+.content-stack>.button{align-self:flex-start}
+.function-note,.status-note{font-size:12px;line-height:1.75;overflow-wrap:anywhere;color:var(--muted);margin:0 0 16px}
+.status-note{font-variant-numeric:tabular-nums}
+.listener-status{padding:14px 23px;border-bottom:1px solid var(--line)}
+.listener-status>.status-note{margin:0}
+@media(max-width:680px){.listener-status{padding:14px 16px}.content-stack{gap:16px}}

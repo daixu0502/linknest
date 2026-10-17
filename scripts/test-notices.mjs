@@ -43,7 +43,12 @@ vm.createContext(ipctx);vm.runInContext(workflows.split('\n').find(l=>l.startsWi
 assert.match(ipctx.ddnsRouterAddresses(),/IPv4|IPV4/);assert.match(ipctx.ddnsRouterAddresses(),/2606:4700::1111.*上次检测/);
 ipctx.state={routerIPs:{ipv4:{loading:true},ipv6:{error:'no IPv6'}}};assert.match(ipctx.ddnsRouterAddresses(),/检测中/);assert.match(ipctx.ddnsRouterAddresses(),/未获取/);
 assert.ok(workflows.includes("btn('恢复所有提示','notice-restore'"));
-for(const file of ['app','workflows','bookmarks','certificates','twofactor','security']){
+assert.match(ctx.functionNote('Helpful <text>'),/&lt;text>/);
+assert.match(ctx.statusNote('2 shared rules'),/role="status"/);
+assert.ok(!ctx.statusNote('shared').includes('data-action'));
+assert.ok(!workflows.includes("notice(st.message.replace"));
+assert.match(workflows,/listener-status/);
+for(const file of ['app','workflows','bookmarks','certificates','twofactor','security','upnp','icons']){
  const js=fs.readFileSync(new URL('../web/'+file+'.js',import.meta.url),'utf8');
  for(const line of js.split('\n'))if(line.includes('dialog('))assert.ok(!line.includes('notice('),'dialog operation details must not be dismissible: '+file);
 }
