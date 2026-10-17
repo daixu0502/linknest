@@ -1,4 +1,6 @@
 .git
+.tools
+local
 data
 test-data
 dist

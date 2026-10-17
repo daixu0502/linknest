@@ -79,4 +79,15 @@ for(const [file,removed] of [
 ])assert.ok(!fs.readFileSync(new URL('../web/'+file,import.meta.url),'utf8').includes(removed));
 const app=fs.readFileSync(new URL('../web/app.js',import.meta.url),'utf8');
 assert.ok(app.includes("state.firewall.state==='error'?notice(state.firewall.message,true):''"));
+context.parts=(heading,body)=>heading+body;
+context.when=(key,value,body)=>body;
+context.area=(key,label)=>label;
+// Render the actual route editor: capabilities are automatic, not dead toggles.
+context.state={config:{rules:[{id:'proxy',routes:[]}]},certificates:[]};
+context.field=(name,label,value,hint)=>`${name}:${label}:${hint||''}`;
+context.editRoute('proxy');
+assert.match(context.dialogResult.body,/HTTP\/HTTPS\/WS\/WSS/);
+assert.match(context.dialogResult.body,/WebSocket 自动转发/);
+assert.match(context.dialogResult.body,/X-Forwarded-Host \/ Proto \/ For/);
+assert.ok(!context.dialogResult.body.includes('websocketEnabled'));
 console.log('DNS delete / native forward / canvas / card scroll / vector clock / simplified notices checks passed.');

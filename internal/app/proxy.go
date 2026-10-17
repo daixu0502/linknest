@@ -143,8 +143,8 @@ func (e *Engine) startWebGroup(rules []Rule) (*webRunning, error) {
 			e.portal.serve(*route, w, q)
 			return
 		}
-		u, err := url.Parse(route.Target)
-		if err != nil || u.Host == "" {
+		u, err := proxyTargetURL(route.Target)
+		if err != nil {
 			http.Error(w, "Invalid backend", 502)
 			return
 		}
@@ -158,6 +158,8 @@ func (e *Engine) startWebGroup(rules []Rule) (*webRunning, error) {
 		}
 		proxy := httputil.ReverseProxy{Transport: tr, Rewrite: func(p *httputil.ProxyRequest) {
 			p.SetURL(u)
+			// Rewrite drops untrusted forwarding headers; derive these from the
+			// actual client connection, including TLS-terminated WebSocket upgrades.
 			p.SetXForwarded()
 			if route.PreserveHost {
 				p.Out.Host = p.In.Host
@@ -221,6 +223,27 @@ func (e *Engine) startWebGroup(rules []Rule) (*webRunning, error) {
 		verified.CloseIdleConnections()
 		insecure.CloseIdleConnections()
 	}}, nil
+}
+
+// WebSocket handshakes travel over HTTP/1.1. ReverseProxy handles Upgrade,
+// subprotocol negotiation and the full-duplex tunnel without a separate switch.
+// Accept explicit ws/wss targets as aliases, keeping HTTP transport TLS checks
+// and the same URL validation for configuration and runtime requests.
+func proxyTargetURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return nil, errors.New("后端地址需为不含账号、查询参数或片段的 HTTP/HTTPS/WS/WSS 地址")
+	}
+	switch u.Scheme {
+	case "http", "https":
+	case "ws":
+		u.Scheme = "http"
+	case "wss":
+		u.Scheme = "https"
+	default:
+		return nil, errors.New("后端地址仅支持 HTTP/HTTPS/WS/WSS")
+	}
+	return u, nil
 }
 
 func originAddress(u *url.URL) string {

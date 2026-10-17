@@ -16,7 +16,8 @@ assert info["Config"]["Labels"].get("linknest.test") == "true", "Not a labeled d
 assert "ALL" in info["HostConfig"]["CapDrop"] and not info["HostConfig"]["CapAdd"], "Unexpected capabilities"
 assert info["HostConfig"]["Privileged"] is False
 assert info["HostConfig"]["PortBindings"]["17880/tcp"][0]["HostIp"] == "127.0.0.1"
-binding = info["HostConfig"]["PortBindings"]["17880/tcp"][0]
+binding = info["NetworkSettings"]["Ports"]["17880/tcp"][0]
+assert binding["HostIp"] == "127.0.0.1" and binding["HostPort"].isdigit(), "Missing effective localhost binding"
 base = "http://127.0.0.1:" + binding["HostPort"] + "/api/"
 jar = http.cookiejar.CookieJar()
 client = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(jar))
@@ -40,7 +41,7 @@ password = secrets.token_urlsafe(24)
 call("setup", "POST", {"token": bootstrap, "username": "admin", "password": password})
 call("login", "POST", {"username": "admin", "password": password})
 state = call("state")
-assert state["version"] == "1.0.7"
+assert state["version"] == "1.0.8"
 assert state["config"]["schema"] == 4
 assert state["config"]["access"]["autoBan"]["enabled"] is False
 assert state["firewall"]["enabled"] is False

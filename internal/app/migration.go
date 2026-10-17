@@ -159,9 +159,9 @@ func validateWeb(r Rule, checkID func(string) error) error {
 		if sub.Backend != "" && sub.Backend != "proxy" {
 			return errors.New("未知反向代理后端类型")
 		}
-		u, err := url.Parse(sub.Target)
-		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return errors.New("后端地址需为不含账号、查询参数的 HTTP/HTTPS 地址")
+		u, err := proxyTargetURL(sub.Target)
+		if err != nil {
+			return err
 		}
 		tp := u.Port()
 		if tp == "" {
