@@ -5,11 +5,11 @@ function certificateJobs(){
 }
 function certificatesPage(){
  const tasks=state.certificateTasks||[],certs=state.certificates||[],ids=[...new Set([...tasks.map(t=>t.id),...certs.map(c=>c.id)])];
- return notice('证书以长期任务保存。编辑只保存配置；手动申请 / 续期才会立即创建 DNS 验证记录。申请失败不替换原证书。')+
+ return notice('证书以长期任务保存。编辑只保存配置；手动申请 / 续期才会立即创建 DNS 验证记录。申请失败不替换原证书。下载 ZIP 包含证书链和私钥，请妥善保管。')+
  panel('证书任务','自动续期每 12 小时检查；已签发证书剩余 30 天时尝试续期',ids.length?ids.map(id=>{
   const t=tasks.find(t=>t.id===id),c=certs.find(c=>c.id===id),j=(state.certificateJobs||[]).find(j=>j.id===id),busy=j?.state==='running';
   const valid=c&&!c.error&&Date.parse(c.expires)>Date.now();
-  return `<article class="cert-card"><div class="cert-heading"><div class="grow"><strong>${esc(t?.name||c?.name||id)}</strong><small>${esc(id)} · ${esc((t?.domains||c?.domains||[]).join(' · '))}</small></div>${pill(busy?'申请中':valid?(c.staging?'测试证书':'有效'):c?'无效 / 已过期':'尚未签发',busy?'blue':valid?'good':'error')}</div><div class="cert-meta"><div><small>有效期</small><p>${c?valid?'剩余 '+Math.max(0,c.remainingDays)+' 天':'已过期 / 无效':'等待首次签发'}</p><small>${c?.expires?esc(new Date(c.expires).toLocaleString())+' 到期':''}</small></div><div><small>来源 / 自动续期</small><p>${t?'ACME · Let’s Encrypt':'手动导入'}</p><small>${t?(t.disabled?'自动续期已关闭':'自动续期已开启'):'不支持自动续期'}</small></div></div><div class="cert-actions">${t?`<button class="button" data-action="cert-run:${esc(id)}" ${busy?'disabled':''}>${icon('refresh')}${c?'手动续期':'申请证书'}</button><button class="button" data-action="cert-edit:${esc(id)}" ${busy?'disabled':''}>${icon('edit')}编辑</button>`:''}<button class="button" data-action="cert-log:${esc(id)}">${icon('info')}过程日志</button><button class="button danger" data-action="cert-delete:${esc(id)}" ${busy?'disabled':''}>${icon('trash')}删除</button></div></article>`;
+  return `<article class="cert-card"><div class="cert-heading"><div class="grow"><strong>${esc(t?.name||c?.name||id)}</strong><small>${esc(id)} · ${esc((t?.domains||c?.domains||[]).join(' · '))}</small></div>${pill(busy?'申请中':valid?(c.staging?'测试证书':'有效'):c?'无效 / 已过期':'尚未签发',busy?'blue':valid?'good':'error')}</div><div class="cert-meta"><div><small>有效期</small><p>${c?valid?'剩余 '+Math.max(0,c.remainingDays)+' 天':'已过期 / 无效':'等待首次签发'}</p><small>${c?.expires?esc(new Date(c.expires).toLocaleString())+' 到期':''}</small></div><div><small>来源 / 自动续期</small><p>${t?'ACME · Let’s Encrypt':'手动导入'}</p><small>${t?(t.disabled?'自动续期已关闭':'自动续期已开启'):'不支持自动续期'}</small></div></div><div class="cert-actions">${t?`<button class="button" data-action="cert-run:${esc(id)}" ${busy?'disabled':''}>${icon('refresh')}${c?'手动续期':'申请证书'}</button><button class="button" data-action="cert-edit:${esc(id)}" ${busy?'disabled':''}>${icon('edit')}编辑</button>`:''}${c&&!c.error?`<button class="button" data-action="cert-download:${esc(id)}" title="下载包含证书链和私钥的 ZIP">${icon('download')}下载证书</button>`:''}<button class="button" data-action="cert-log:${esc(id)}">${icon('info')}过程日志</button><button class="button danger" data-action="cert-delete:${esc(id)}" ${busy?'disabled':''}>${icon('trash')}删除</button></div></article>`;
  }).join(''):empty('暂无证书任务','创建申请任务，或导入现有 PEM 证书。'),btn('导入 PEM','import-cert','download'))+
  panel('申请过程','运行时每 2 秒刷新；不显示 DNS 验证值、AccessKey Secret 或私钥',certificateJobs());
 }
@@ -19,6 +19,14 @@ function editCertificate(id){
 }
 async function certificateAction(key){
  const [action,id]=key.split(':');
+ if(action==='cert-download'){
+  const blob=await api('certificates/download','POST',{id},'blob');
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='linknest-'+id+'.zip';
+  try{document.body.append(link);link.click();toast('证书 ZIP 已开始下载，请妥善保管其中的私钥');}
+  finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  return true;
+ }
  if(action==='issue'||action==='cert-edit'){editCertificate(id);return true;}
  if(action==='cert-run'){dialog('申请 / 手动续期',actionNote('将使用此任务的独立凭据创建临时 DNS TXT。正式证书域名会进入公开证书透明度日志；继续表示同意 Let’s Encrypt 服务条款。',true)+'<p><a href="https://letsencrypt.org/repository/" target="_blank" rel="noopener noreferrer">查看服务条款</a></p>',async()=>{await api('certificates/run','POST',{id});await refresh(true);toast('任务已开始，可查看申请过程');},'同意并申请');return true;}
  if(action==='cert-delete'){dialog('删除证书任务',actionNote('删除此任务、证书文件及对应的加密凭据和过程日志。被反向代理或管理后台引用时禁止删除。此操作不撤销 CA 已签发证书。',true),async()=>{await api('certificates/delete','POST',{id});await refresh(true);toast('证书任务已删除');},'确认删除');return true;}

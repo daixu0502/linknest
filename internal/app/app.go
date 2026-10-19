@@ -606,6 +606,10 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "设备不存在")
 		return
 	}
+	if p == "/api/certificates/download" {
+		a.downloadCertificate(w, r)
+		return
+	}
 	if p == "/api/certificates/import" && r.Method == "POST" {
 		var q struct {
 			ID          string `json:"id"`

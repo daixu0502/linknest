@@ -15,3 +15,18 @@
 *.tmp
 *.key
 *.pem
+/.tools/
+/local/
+
+# Tests stay local; Markdown documentation is distributable.
+**/tests/**/*
+**/__tests__/**/*
+!**/tests/**/
+!**/__tests__/**/
+!**/tests/**/*.md
+!**/__tests__/**/*.md
+*_test.go
+/scripts/test-*.mjs
+/scripts/test-*.cjs
+/scripts/smoke-*.mjs
+/scripts/smoke-*.py

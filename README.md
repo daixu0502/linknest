@@ -4,7 +4,7 @@
 
 LinkNest 是单容器网络服务控制台，提供反向代理、TCP / UDP 端口转发、阿里云动态域名与证书申请、轻面板、网络唤醒、访问过滤和 SSH Web 终端。
 
-当前版本 **1.1.3**，发布镜像支持 **Linux ARM64**，适用于 ARM64 NAS / 路由器；其他架构可自行构建。前端为内嵌 HTML / CSS / JavaScript，无需 Node 构建。第三方资源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+当前版本 **1.1.4**，发布镜像支持 **Linux ARM64**，适用于 ARM64 NAS / 路由器；其他架构可自行构建。前端为内嵌 HTML / CSS / JavaScript，无需 Node 构建。第三方资源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
 本项目尚未经独立安全审计，管理入口建议仅在受信局域网或 SSH 隧道中访问。自动封禁与名单订阅默认关闭，详见 [访问过滤](docs/access-filter.md)。
 
@@ -17,13 +17,13 @@ LinkNest 是单容器网络服务控制台，提供反向代理、TCP / UDP 端�
 从 Docker Hub 拉取（Linux ARM64）：
 
 ```sh
-docker pull jacoyyyy/linknest:1.1.3
+docker pull jacoyyyy/linknest:1.1.4
 ```
 
 在源码目录构建，默认构建宿主机架构，期间执行 Go 测试：
 
 ```sh
-docker build -t jacoyyyy/linknest:1.1.3 .
+docker build -t jacoyyyy/linknest:1.1.4 .
 ```
 
 依赖下载困难时可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。源码测试方法见 [测试说明](docs/testing.md)。
@@ -32,9 +32,9 @@ docker build -t jacoyyyy/linknest:1.1.3 .
 
 ```sh
 # 在已有镜像的设备上导出
-docker save jacoyyyy/linknest:1.1.3 | gzip > linknest-1.1.3-linux-arm64.tar.gz
+docker save jacoyyyy/linknest:1.1.4 | gzip > linknest-1.1.4-linux-arm64.tar.gz
 # 复制到另一台 ARM64 设备后导入
-gzip -dc linknest-1.1.3-linux-arm64.tar.gz | docker load
+gzip -dc linknest-1.1.4-linux-arm64.tar.gz | docker load
 ```
 
 ### 路由器 / NAS 部署
@@ -54,7 +54,7 @@ docker run -d --name linknest \
   -e LINKNEST_FIREWALL=enabled \
   --mount type=bind,source=/run/xtables.lock,target=/run/xtables.lock \
   -v linknest-data:/data \
-  jacoyyyy/linknest:1.1.3
+  jacoyyyy/linknest:1.1.4
 ```
 
 自动放行与内核转发需要较高网络权限，仅管理 LinkNest 自有规则，不清空宿主防火墙；不需要独立权限助手。不要使用 `--privileged` 或挂载 Docker Socket。WOL 广播建议使用 host 网络；公网可达仍取决于上级路由、运营商和防火墙。
@@ -62,6 +62,8 @@ docker run -d --name linknest \
 反向代理自动设置来源请求头并支持 WebSocket/WSS，无需单独开启；Host 保留方式、显式 WS/WSS 后端和 Motrix 配置见 [反向代理说明](docs/reverse-proxy.md)。
 
 端口转发内的“路由器 UPnP”可查看和管理原厂映射、设置设备黑名单，并通过显式授权开关切换原厂安全模式。默认不接管规则或降低安全限制，详见 [UPnP 管理](docs/upnp.md)。
+
+在「证书管理」中，已签发或已导入的证书可点击「下载证书」，下载 `linknest-<证书标识>.zip`。ZIP 包含完整证书链 `fullchain.pem` 和对应私钥 `privkey.pem`（PEM 格式）；不包含 DNS 凭据、续期任务或 ACME 账户密钥。压缩包包含私钥，请妥善保管。续期期间仍可下载当前已保存的证书；尚未签发或文件损坏时无法下载。
 
 首次初始化读取一次性口令：
 
@@ -91,7 +93,7 @@ go.mod / go.sum     Go 依赖
 THIRD_PARTY.md      第三方资源与许可说明
 ```
 
-`bin/`、`dist/` 为本地构建 / 交付目录，不进入 Git 或 Docker 构建上下文。有效测试保留在源码中，不进入运行镜像。
+`bin/`、`dist/` 为本地构建 / 交付目录，不进入 Git 或 Docker 构建上下文。测试代码仅保留本地，不上传 GitHub；测试说明等 Markdown 文档继续分发。`local/` 中的配置和密钥不进入源码或镜像。
 
 ## 数据位置与备份
 
@@ -119,7 +121,7 @@ docker stop linknest
 docker run --rm --network none --entrypoint tar \
   -v linknest-data:/data:ro \
   --mount "type=bind,source=$(pwd)/linknest-backups,target=/backup" \
-  jacoyyyy/linknest:1.1.3 -czf /backup/linknest-data.tar.gz -C /data .
+  jacoyyyy/linknest:1.1.4 -czf /backup/linknest-data.tar.gz -C /data .
 docker start linknest
 ```
 
