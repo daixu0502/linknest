@@ -1,8 +1,8 @@
 # Offline/cross-compiled release: provide a stripped ARM64 binary named linknest
 # (mode 0755) and dependency license files under licenses/ in the build context.
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables tzdata \
-    && rm -rf /var/lib/apt/lists/*
+# Build Dockerfile.runtime-base first; never replace this with an application tag.
+ARG RUNTIME_BASE=linknest-runtime:bookworm-arm64
+FROM ${RUNTIME_BASE}
 COPY linknest /usr/local/bin/linknest
 COPY licenses /usr/share/doc/linknest
 ENV LINKNEST_DATA_DIR=/data LINKNEST_ADMIN_ADDR=127.0.0.1:17880 LINKNEST_FIREWALL=disabled \

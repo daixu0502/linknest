@@ -26,7 +26,7 @@ docker pull jacoyyyy/linknest:1.1.5
 docker build -t jacoyyyy/linknest:1.1.5 .
 ```
 
-依赖下载困难时可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。源码测试方法见 [测试说明](docs/testing.md)。
+依赖下载困难时可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。源码测试方法见 [测试说明](docs/testing.md)。独立运行环境、离线构建及禁止叠加旧应用镜像的发布流程见 [镜像构建与发布](docs/image-build.md)。
 
 离线导出、导入镜像：
 

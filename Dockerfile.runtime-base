@@ -1,0 +1,6 @@
+# Build this independently of LinkNest releases and reuse it until runtime
+# dependencies are intentionally updated. Never use a LinkNest app image here.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables tzdata \
+    && rm -rf /var/lib/apt/lists/*
+LABEL org.opencontainers.image.description="LinkNest runtime dependencies only; no application binary"
