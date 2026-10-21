@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from datetime import datetime, timezone
 import gzip
 import hashlib
 import io
@@ -91,6 +92,12 @@ def prepare(args):
     revision = run(["git", "-c", "safe.directory=" + args.source.as_posix(), "-C", args.source, "rev-parse", "HEAD"]).decode().strip()
     if run(["git", "-c", "safe.directory=" + args.source.as_posix(), "-C", args.source, "status", "--porcelain", "--untracked-files=normal"]).strip():
         raise ValueError("Commit source changes before preparing a release")
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch is None:
+        epoch = run(["git", "-c", "safe.directory=" + args.source.as_posix(), "-C", args.source, "show", "-s", "--format=%ct", "HEAD"]).decode().strip()
+    if not epoch.isdecimal():
+        raise ValueError("SOURCE_DATE_EPOCH must be a non-negative Unix timestamp")
+    created = datetime.fromtimestamp(int(epoch), timezone.utc).isoformat().replace("+00:00", "Z")
     binary = (args.stage / "linknest").read_bytes()
     if binary[:4] != b"\x7fELF" or binary[4] != 2 or int.from_bytes(binary[18:20], "little") != 183:
         raise ValueError("Expected an ELF64 ARM64 LinkNest binary")
@@ -110,12 +117,13 @@ def prepare(args):
     layer_bytes = gzip.compress(raw_layer, compresslevel=6, mtime=0)
     layer_name = sha(layer_bytes) + ".tar.gz"
     config = {key: copy.deepcopy(base_config[key]) for key in ["os", "architecture", "rootfs", "history"]}
+    config["created"] = created
     config["rootfs"]["diff_ids"].append("sha256:" + sha(raw_layer))
-    config["history"].append({"created_by": "COPY current LinkNest binary and licenses onto locked runtime"})
+    config["history"].append({"created": created, "created_by": "COPY current LinkNest binary and licenses onto locked runtime"})
     config["config"] = {
         "Entrypoint": ["/usr/local/bin/linknest"],
         "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LINKNEST_DATA_DIR=/data", "LINKNEST_ADMIN_ADDR=127.0.0.1:17880", "LINKNEST_FIREWALL=disabled", "GOMEMLIMIT=128MiB", "GOMAXPROCS=2", "TZ=Asia/Shanghai"],
-        "Labels": {"org.opencontainers.image.version": args.version, "org.opencontainers.image.source": "https://github.com/daixu0502/linknest", "org.opencontainers.image.revision": revision},
+        "Labels": {"org.opencontainers.image.created": created, "org.opencontainers.image.version": args.version, "org.opencontainers.image.source": "https://github.com/daixu0502/linknest", "org.opencontainers.image.revision": revision},
         "Volumes": {"/data": {}}, "ExposedPorts": {"17880/tcp": {}}, "StopSignal": "SIGTERM",
         "Healthcheck": {"Test": ["CMD", "linknest", "healthcheck"], "Interval": 30000000000, "Timeout": 5000000000, "StartPeriod": 10000000000, "Retries": 3},
     }
@@ -141,7 +149,7 @@ def prepare(args):
             if actual_files != files:
                 raise ValueError("Output application layer mismatch")
         compressed_size = sum(image.getmember(name).size for name in layers)
-    metadata = dict(version=args.version, revision=revision, architecture="linux/arm64", binarySHA256=sha(binary), runtimeArchiveSHA256=runtime_sha, runtimeLayers=len(manifest["Layers"]), applicationLayers=1, layers=len(layers), compressedLayerBytes=compressed_size, imageBytes=(args.stage / "image.tar").stat().st_size, imageSHA256=sha((args.stage / "image.tar").read_bytes()))
+    metadata = dict(version=args.version, revision=revision, created=created, architecture="linux/arm64", binarySHA256=sha(binary), runtimeArchiveSHA256=runtime_sha, runtimeLayers=len(manifest["Layers"]), applicationLayers=1, layers=len(layers), compressedLayerBytes=compressed_size, imageBytes=(args.stage / "image.tar").stat().st_size, imageSHA256=sha((args.stage / "image.tar").read_bytes()))
     (args.stage / "release.json").write_text(json.dumps(metadata, indent=2), encoding="utf8")
     return metadata
 

@@ -36,7 +36,9 @@ python scripts/release-image.py prepare --version 1.1.5 --source "$source_dir" -
 
 脚本读取本地 Go SDK 与模块缓存中的依赖许可证，以及工作树中的第三方说明；所有文件缺失均会停止。生成镜像只增加一层当前程序与许可证，运行环境层保持原样，后续发布不会逐版累积。`Dockerfile.runtime` 也以独立的 `linknest-runtime:bookworm-arm64` 为默认基础，用于有 Docker 的环境。
 
-`release.json` 记录源码提交、程序与镜像哈希、运行环境哈希和层数。发布通过本地 `.tools/registry/crane.exe` 完成，令牌从 `local/dockerhub-token.txt` 读取，经标准输入登录；可用 `HTTP_PROXY` / `HTTPS_PROXY` 指定代理：
+镜像顶层 `created`、当前程序层历史与 `org.opencontainers.image.created` 使用同一个 UTC 时间，默认取源码提交时间；可用非负 Unix 秒值 `SOURCE_DATE_EPOCH` 显式覆盖。这样既保留可重现的构建，也能让 Docker 正确显示镜像日期；`TZ=Asia/Shanghai` 只影响容器内时区，不能补全镜像创建时间。
+
+`release.json` 记录源码提交、创建时间、程序与镜像哈希、运行环境哈希和层数。发布通过本地 `.tools/registry/crane.exe` 完成，令牌从 `local/dockerhub-token.txt` 读取，经标准输入登录；可用 `HTTP_PROXY` / `HTTPS_PROXY` 指定代理：
 
 ```sh
 python scripts/release-image.py publish --version 1.1.5 --source "$source_dir" --stage "$stage_dir"
