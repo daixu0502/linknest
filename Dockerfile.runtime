@@ -1,8 +1,9 @@
 # Offline/cross-compiled release: provide a stripped ARM64 binary named linknest
 # (mode 0755) and dependency license files under licenses/ in the build context.
 # Build Dockerfile.runtime-base first; never replace this with an application tag.
-ARG RUNTIME_BASE=linknest-runtime:bookworm-arm64
+ARG RUNTIME_BASE=linknest-runtime:minimal-bookworm-arm64
 FROM ${RUNTIME_BASE}
+RUN test ! -e /usr/local/bin/linknest && test ! -d /usr/share/doc/linknest && test ! -e /usr/bin/apt-get
 COPY linknest /usr/local/bin/linknest
 COPY licenses /usr/share/doc/linknest
 ENV LINKNEST_DATA_DIR=/data LINKNEST_ADMIN_ADDR=127.0.0.1:17880 LINKNEST_FIREWALL=disabled \

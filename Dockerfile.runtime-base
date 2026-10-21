@@ -1,6 +1,12 @@
 # Build this independently of LinkNest releases and reuse it until runtime
 # dependencies are intentionally updated. Never use a LinkNest app image here.
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables tzdata \
+FROM debian:bookworm-slim AS runtime-files
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables tzdata python3 \
     && rm -rf /var/lib/apt/lists/*
-LABEL org.opencontainers.image.description="LinkNest runtime dependencies only; no application binary"
+COPY scripts/minimal-runtime.py /extract-runtime.py
+RUN python3 /extract-runtime.py --rootfs / --destination /out/runtime
+
+FROM scratch
+COPY --from=runtime-files /out/runtime/ /
+LABEL org.linknest.runtime.kind="debian-minimal-v1" \
+      org.opencontainers.image.description="Dependency-closed LinkNest runtime; no application binary or package manager"

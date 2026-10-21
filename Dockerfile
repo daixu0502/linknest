@@ -12,11 +12,17 @@ RUN mkdir -p /out/licenses && cp /usr/local/go/LICENSE /out/licenses/GO-LICENSE 
     && cp /go/pkg/mod/golang.org/x/sys@v0.41.0/LICENSE /out/licenses/XSYS-LICENSE \
     && cp /go/pkg/mod/github.com/gorilla/websocket@v1.5.3/LICENSE /out/licenses/WEBSOCKET-LICENSE \
     && cp web/vendor/LICENSE /out/licenses/XTERM-LICENSE \
-    && cp /go/pkg/mod/github.com/skip2/go-qrcode@v0.0.0-20200617195104-da1b6568686e/LICENSE /out/licenses/QRCODE-LICENSE
+    && cp /go/pkg/mod/github.com/skip2/go-qrcode@v0.0.0-20200617195104-da1b6568686e/LICENSE /out/licenses/QRCODE-LICENSE \
+    && cp THIRD_PARTY.md /out/licenses/THIRD_PARTY.md
 
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables tzdata \
+FROM debian:bookworm-slim AS runtime-files
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables tzdata python3 \
     && rm -rf /var/lib/apt/lists/*
+COPY scripts/minimal-runtime.py /extract-runtime.py
+RUN python3 /extract-runtime.py --rootfs / --destination /out/runtime
+
+FROM scratch
+COPY --from=runtime-files /out/runtime/ /
 COPY --from=build /out/linknest /usr/local/bin/linknest
 COPY --from=build /out/licenses /usr/share/doc/linknest
 ENV LINKNEST_DATA_DIR=/data LINKNEST_ADMIN_ADDR=127.0.0.1:17880 LINKNEST_FIREWALL=disabled \

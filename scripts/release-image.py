@@ -48,6 +48,8 @@ def validate_runtime(path):
         if len(manifest["Layers"]) != len(config["rootfs"]["diff_ids"]):
             raise ValueError("Runtime layer count mismatch")
         settings = config.get("config", {})
+        if settings.get("Labels", {}).get("org.linknest.runtime.kind") != "debian-minimal-v1" or len(manifest["Layers"]) != 1:
+            raise ValueError("Expected the single-layer minimal runtime built by minimal-runtime.py or Dockerfile.runtime-base")
         if any(item.startswith("LINKNEST_") for item in settings.get("Env", [])) or BINARY_PATH in " ".join(settings.get("Entrypoint") or []):
             raise ValueError("Runtime contains application configuration")
         for name in manifest["Layers"]:
@@ -59,6 +61,8 @@ def validate_runtime(path):
                     item = str(p)
                     if item == BINARY_PATH or item == DOCS_PATH or item.startswith(DOCS_PATH + "/"):
                         raise ValueError("Runtime has a LinkNest application layer; refusing cumulative releases")
+                    if item in {"usr/bin/apt", "usr/bin/apt-get", "usr/bin/perl", "usr/bin/python3"}:
+                        raise ValueError("Runtime was not trimmed; refusing a full Debian environment")
         return manifest, config
 
 
@@ -197,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--version", default="1.1.5")
     parser.add_argument("--source", type=Path, default=ROOT)
     parser.add_argument("--stage", type=Path)
-    parser.add_argument("--runtime-base", type=Path, default=ROOT / ".tools/runtime-base/bookworm-arm64.tar")
+    parser.add_argument("--runtime-base", type=Path, default=ROOT / ".tools/runtime-base/minimal-bookworm-arm64.tar")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-a-zA-Z0-9.]+)?", args.version):
         parser.error("Invalid release version")

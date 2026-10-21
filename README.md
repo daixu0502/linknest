@@ -6,6 +6,8 @@ LinkNest 是单容器网络服务控制台，提供反向代理、TCP / UDP 端�
 
 当前版本 **1.1.5**，发布镜像支持 **Linux ARM64**，适用于 ARM64 NAS / 路由器；其他架构可自行构建。前端为内嵌 HTML / CSS / JavaScript，无需 Node 构建。第三方资源与许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
+镜像使用经过 ARM64 实机验证的精简 Debian 运行环境，保留 IPv4/IPv6 内核转发、证书、时区与现有前端功能。裁剪与发布入口见 [镜像构建与发布](docs/image-build.md)，验证范围见 [精简镜像验证](docs/minimal-image-validation.md)。
+
 本项目尚未经独立安全审计，管理入口建议仅在受信局域网或 SSH 隧道中访问。自动封禁与名单订阅默认关闭，详见 [访问过滤](docs/access-filter.md)。
 
 轻面板右上角「选择背景」菜单可设置卡片动效：默认跟随系统；系统关闭动画时，可为当前浏览器单独选择「开启」，不修改 Windows 设置。选择保存在当前浏览器中。
