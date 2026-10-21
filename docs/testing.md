@@ -1,4 +1,4 @@
-# LinkNest 1.1.4 测试
+# LinkNest 1.1.5 测试
 
 ## 运行
 
@@ -18,6 +18,8 @@ go build -trimpath -o bin/linknest ./cmd/linknest
 
 可选 `go test -race ./...` 需支持的 CGO 工具链。ARM64 交叉编译使用 `GOOS=linux GOARCH=arm64 CGO_ENABLED=0`；编译成功不等于在设备运行成功。
 
+新增转发回归可运行 `go test ./internal/app -run 'TestForward|TestKernelFamily|TestKernelIPv6'` 和 `node scripts/test-forward-families.mjs`。本地 `.tools/test-forward-netns.py` 在 Linux 新建独立客户端、路由器和后端网络命名空间，使用 `.tools/forward-tests-linux-amd64`，实测 IPv4 / IPv6 TCP、UDP 同端口内核转发、来源地址转换开关和单地址族清理；需 root、`unshare`、`nsenter`、`ip` 及 legacy iptables/ip6tables，不连接生产网络。该脚本和测试代码只在本地保留。
+
 ## 自动回归范围
 
 - UPnP 服务发现、同地址控制 URL、无代理/跳转、SOAP 错误、映射增删改与竞争保护、失败恢复；与 LinkNest 规则冲突、登录/CSRF、并发拒绝和独立数据保存。
@@ -31,6 +33,7 @@ go build -trimpath -o bin/linknest ./cmd/linknest
 - 旧配置迁移、加密密钥、账户、HTTPS 会话与 CSRF。
 - 两步验证：RFC 6238 向量、本地二维码、密码单独不能登录、时钟偏差与防重放、一次性恢复码及并发消费、绑定有效期 / 会话限制、限流、重启与账号变更保留、恢复码轮换与关闭、密钥缺失拒绝启动、分步弹窗切换。
 - 共享端口域名路由、TLS、HTTP 跳转、来源适配、TCP/UDP、内核 NAT 自有链边界。
+- 端口转发地址族与监听地址重叠校验；IPv4 / IPv6 同端口、双栈冲突、IPv4 映射地址及多规则检查。TCP / UDP 实际验证 IPv4 ↔ IPv6、同族及同端口独立监听；IPv4 / IPv6 内核 NAT 生成、原 IP 选项、地址族独立失败清理、规则解析预检查与持久化。前端验证两种模式文案、IPv6 地址保存与原 IP 选项。
 - 反代 HTTP/HTTPS 自动来源头及伪造头清除；WS/WSS 与 HTTP/HTTPS 后端、证书校验、子协议、服务端推送、文本/二进制大帧、Ping/Pong、路径查询、来源保护及停用入口断开升级连接。
 - DDNS 类型、删除远端确认、更新与凭据；证书长期任务及保护。证书 ZIP 下载覆盖登录 / CSRF、非法标识、缺失 / 损坏 / 不匹配文件、完整证书链及私钥、排除 DNS / ACME 凭据、续期中读取与过期证书导出；前端覆盖下载入口、二进制响应、错误提示和会话失效。
 - 路由器公网 IPv4 / IPv6 非阻塞读取、单次共享刷新、冷却、独立失败与旧值标记；服务状态文案统一。

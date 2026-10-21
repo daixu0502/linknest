@@ -21,24 +21,25 @@ import (
 	"sync"
 )
 
-const version = "1.1.4"
+const version = "1.1.5"
 const configSchema = 4
 
 type Rule struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	Kind         string     `json:"kind"`
-	Enabled      bool       `json:"enabled"`
-	Listen       string     `json:"listen"`
-	Target       string     `json:"target"`
-	Domain       string     `json:"domain"`
-	TLS          bool       `json:"tls"`
-	RedirectHTTP bool       `json:"redirectHttp,omitempty"`
-	Certificate  string     `json:"certificate"`
-	OpenFirewall bool       `json:"openFirewall"`
-	Network      string     `json:"network,omitempty"`
-	ForwardMode  string     `json:"forwardMode,omitempty"`
-	Routes       []WebRoute `json:"routes,omitempty"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Kind             string     `json:"kind"`
+	Enabled          bool       `json:"enabled"`
+	Listen           string     `json:"listen"`
+	Target           string     `json:"target"`
+	Domain           string     `json:"domain"`
+	TLS              bool       `json:"tls"`
+	RedirectHTTP     bool       `json:"redirectHttp,omitempty"`
+	Certificate      string     `json:"certificate"`
+	OpenFirewall     bool       `json:"openFirewall"`
+	Network          string     `json:"network,omitempty"`
+	ForwardMode      string     `json:"forwardMode,omitempty"`
+	PreserveClientIP bool       `json:"preserveClientIp,omitempty"`
+	Routes           []WebRoute `json:"routes,omitempty"`
 }
 type WebRoute struct {
 	ID             string   `json:"id"`
@@ -390,7 +391,7 @@ func validate(c Config, admin string) error {
 		return err
 	}
 	ids := map[string]bool{}
-	seen := map[string]Rule{}
+	seen := map[string][]Rule{}
 	_, ap, _ := hostPort(admin)
 	checkID := func(id string) error {
 		if !validID.MatchString(id) || ids[id] {
@@ -411,6 +412,9 @@ func validate(c Config, admin string) error {
 		}
 		if r.ForwardMode != "" && r.ForwardMode != "proxy" && r.ForwardMode != "kernel" {
 			return errors.New("未知转发模式")
+		}
+		if r.PreserveClientIP && (r.Kind == "web" || r.ForwardMode != "kernel") {
+			return errors.New("保留客户端原始 IP 仅支持内核转发；兼容转发会重新建立连接")
 		}
 		if r.ForwardMode == "kernel" {
 			if err := validateKernelRule(r); err != nil {
@@ -433,10 +437,12 @@ func validate(c Config, admin string) error {
 				if p == ap {
 					return errors.New("监听端口与管理入口冲突")
 				}
-				if prev, ok := seen[k]; ok && (prev.Kind != "web" || r.Kind != "web" || webListenKey(prev) != webListenKey(r)) {
-					return errors.New("监听端口冲突；仅反向代理主规则可共用端口，且监听 IP 与网络栈须一致")
+				for _, prev := range seen[k] {
+					if listenersOverlap(prev, r) && (prev.Kind != "web" || r.Kind != "web" || webListenKey(prev) != webListenKey(r)) {
+						return fmt.Errorf("%s 与 %s 监听冲突：同一协议、地址族及监听地址不能重叠；可分别使用仅 IPv4 和仅 IPv6 创建同端口规则", r.Name, prev.Name)
+					}
 				}
-				seen[k] = r
+				seen[k] = append(seen[k], r)
 			}
 		}
 		if r.Kind == "web" {
@@ -448,8 +454,17 @@ func validate(c Config, admin string) error {
 			if e != nil || th == "" {
 				return errors.New("转发目标需为主机:端口")
 			}
-			if r.Enabled && tp == p && (th == h || th == "127.0.0.1" || th == "localhost") {
-				return errors.New("目标不能指向自身监听端口")
+			if r.Enabled && tp == p {
+				for _, v6 := range []bool{false, true} {
+					listenIP, ok := listenerAddress(r, v6)
+					if !ok {
+						continue
+					}
+					targetIP := net.ParseIP(th)
+					if th == "localhost" || targetIP != nil && (targetIP.To4() == nil) == v6 && (targetIP.Equal(listenIP) || listenIP.IsUnspecified() && targetIP.IsLoopback()) {
+						return errors.New("目标不能指向自身监听端口")
+					}
+				}
 			}
 		}
 		if r.TLS && (r.Kind != "web" || !validID.MatchString(r.Certificate)) {

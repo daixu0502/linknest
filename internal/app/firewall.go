@@ -24,10 +24,11 @@ type FWStatus struct {
 	Ports   []string `json:"ports"`
 }
 type Firewall struct {
-	mu      sync.Mutex
-	enabled bool
-	status  FWStatus
-	run     func(string, []string, string) (string, error)
+	mu       sync.Mutex
+	enabled  bool
+	status   FWStatus
+	run      func(string, []string, string) (string, error)
+	readFile func(string) ([]byte, error)
 }
 
 func command(name string, args []string, input string) (string, error) {
@@ -42,7 +43,7 @@ func command(name string, args []string, input string) (string, error) {
 	return string(out), nil
 }
 func newFirewall(enabled bool) *Firewall {
-	return &Firewall{enabled: enabled, status: FWStatus{Enabled: enabled, State: "disabled", Message: "未授权防火墙管理；应用层 IP 过滤仍生效", Ports: []string{}}, run: command}
+	return &Firewall{enabled: enabled, status: FWStatus{Enabled: enabled, State: "disabled", Message: "未授权防火墙管理；应用层 IP 过滤仍生效", Ports: []string{}}, run: command, readFile: os.ReadFile}
 }
 func (f *Firewall) get() FWStatus { f.mu.Lock(); defer f.mu.Unlock(); return f.status }
 func familyMatch(s string, v6 bool) bool {

@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"runtime"
 	"strconv"
@@ -51,12 +50,8 @@ func (f *Firewall) forwardConflicts(rules []Rule) map[string]error {
 }
 
 func forwardFamily(r Rule, v6 bool) bool {
-	h, _, err := hostPort(r.Listen)
-	if err != nil || r.Network == "ipv4" && v6 || r.Network == "ipv6" && !v6 {
-		return false
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && (ip.To4() == nil) == v6 || !v6 && ip != nil && ip.IsUnspecified() && r.Network != "ipv6"
+	_, ok := listenerAddress(r, v6)
+	return ok
 }
 
 // iptables -S quotes comments. Parse those quotes so words inside a comment

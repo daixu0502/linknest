@@ -172,17 +172,18 @@ func (e *Engine) apply(c Config) {
 		}
 	}
 	e.fw.sync(sharedFirewallRules(active), c)
-	if err := e.fw.syncKernel(active, c); err != nil {
-		for _, rr := range e.rules {
-			if rr.rule.ForwardMode == "kernel" && rr.status.State == "running" {
+	kernelErrors := e.fw.syncKernelByRule(active, c)
+	for id, rr := range e.rules {
+		if rr.rule.ForwardMode == "kernel" && rr.status.State == "running" {
+			if err := kernelErrors[id]; err != nil {
 				rr.status.State = "error"
 				rr.status.Message = "内核转发未生效：" + err.Error()
-			}
-		}
-	} else {
-		for _, rr := range e.rules {
-			if rr.rule.ForwardMode == "kernel" && rr.status.State == "running" {
-				rr.status.Message = "IPv4 内核 NAT 转发已生效"
+			} else {
+				_, _, family := kernelTools(rr.rule.Network == "ipv6")
+				rr.status.Message = family + " 内核 NAT 转发已生效"
+				if rr.rule.PreserveClientIP {
+					rr.status.Message += " · 保留客户端 IP"
+				}
 			}
 		}
 	}
