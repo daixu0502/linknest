@@ -51,6 +51,9 @@ function pageContentMarkup(animate=false){
  return `${tabHTML}<div class="page-body${animate?' page-transition':''}">${fragment.innerHTML}</div>`;
 }
 function patchPageContent(content,next,changed=false){
+ // Entering a different sidebar page animates the entire content container.
+ // A child-tab change ends that entrance and animates only the new body.
+ if(changed)content.classList.remove('page-transition');
  const tabs=content.querySelector(':scope > .panel-tabs'),nextTabs=next.querySelector(':scope > .panel-tabs');
  if(tabs&&nextTabs){
   for(const button of tabs.querySelectorAll('button')){
