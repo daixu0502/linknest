@@ -56,8 +56,8 @@ func (a *App) sshTrust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	select {
-	case a.terminalSlots <- struct{}{}:
-		defer func() { <-a.terminalSlots }()
+	case a.deviceSlots <- struct{}{}:
+		defer func() { <-a.deviceSlots }()
 	default:
 		fail(w, 429, "正在连接，请稍后再试")
 		return
@@ -100,8 +100,8 @@ func (a *App) sshProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	select {
-	case a.terminalSlots <- struct{}{}:
-		defer func() { <-a.terminalSlots }()
+	case a.deviceSlots <- struct{}{}:
+		defer func() { <-a.deviceSlots }()
 	default:
 		fail(w, 429, "正在连接，请稍后再试")
 		return

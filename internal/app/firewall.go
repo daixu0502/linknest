@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,12 +19,15 @@ import (
 const fwChain = "LNEST_IN"
 
 type FWStatus struct {
-	Enabled bool     `json:"enabled"`
-	State   string   `json:"state"`
-	Message string   `json:"message"`
-	Ports   []string `json:"ports"`
+	Families map[string]StatusPart `json:"families"`
+	Checked  string                `json:"checked"`
+	Enabled  bool                  `json:"enabled"`
+	State    string                `json:"state"`
+	Message  string                `json:"message"`
+	Ports    []string              `json:"ports"`
 }
 type Firewall struct {
+	cache    atomic.Pointer[FWStatus]
 	mu       sync.Mutex
 	enabled  bool
 	status   FWStatus
@@ -45,7 +49,12 @@ func command(name string, args []string, input string) (string, error) {
 func newFirewall(enabled bool) *Firewall {
 	return &Firewall{enabled: enabled, status: FWStatus{Enabled: enabled, State: "disabled", Message: "未授权防火墙管理；应用层 IP 过滤仍生效", Ports: []string{}}, run: command, readFile: os.ReadFile}
 }
-func (f *Firewall) get() FWStatus { f.mu.Lock(); defer f.mu.Unlock(); return f.status }
+func (f *Firewall) get() FWStatus {
+	if s := f.cache.Load(); s != nil {
+		return *s
+	}
+	return FWStatus{Enabled: f.enabled, State: "disabled", Message: "尚未同步防火墙", Ports: []string{}, Families: map[string]StatusPart{}}
+}
 func familyMatch(s string, v6 bool) bool {
 	ip := net.ParseIP(s)
 	if ip == nil {
@@ -114,74 +123,93 @@ func buildFirewall(rules []Rule, c Config, v6 bool) string {
 func (f *Firewall) sync(rules []Rule, c Config) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	status := FWStatus{Enabled: f.enabled, State: "disabled", Message: "未授权防火墙管理", Ports: []string{}, Families: map[string]StatusPart{}, Checked: time.Now().Format(time.RFC3339)}
+	defer func() { f.status = status; f.cache.Store(&status) }()
 	if !f.enabled {
 		return
 	}
-	f.status.Enabled = true
-	f.status.Ports = []string{}
-	if runtime.GOOS != "linux" {
-		f.status.State = "error"
-		f.status.Message = "防火墙管理仅支持 Linux"
-		return
+	for _, v6 := range []bool{false, true} {
+		family := "ipv4"
+		if v6 {
+			family = "ipv6"
+		}
+		selected := []Rule{}
+		for _, r := range rules {
+			if r.ForwardMode != "kernel" {
+				if _, ok := listenerAddress(r, v6); ok {
+					selected = append(selected, r)
+				}
+			}
+		}
+		if len(selected) == 0 {
+			status.Families[family] = StatusPart{State: "unused", Message: "无应用层规则"}
+			if runtime.GOOS == "linux" {
+				bin, _, _ := kernelTools(v6)
+				f.run(bin, []string{"-w", "3", "-D", "INPUT", "-j", fwChain}, "")
+				f.run(bin, []string{"-w", "3", "-F", fwChain}, "")
+				f.run(bin, []string{"-w", "3", "-X", fwChain}, "")
+			}
+			continue
+		}
+		if err := f.syncInputFamily(selected, c, v6); err != nil {
+			status.Families[family] = StatusPart{State: "error", Message: err.Error()}
+			continue
+		}
+		status.Families[family] = StatusPart{State: "applied", Message: "规则已同步"}
+		for _, r := range selected {
+			if r.OpenFirewall {
+				_, p, _ := hostPort(r.Listen)
+				for _, proto := range ruleProtocols(r) {
+					status.Ports = append(status.Ports, fmt.Sprintf("%s %d/%s", family, p, strings.ToUpper(proto)))
+				}
+			}
+		}
 	}
-	if b, e := os.ReadFile("/proc/self/status"); e == nil {
+	status.State = "applied"
+	status.Message = "所需地址族已分别同步；每 30 秒复核"
+	for _, s := range status.Families {
+		if s.State == "error" {
+			status.State = "error"
+			status.Message = "部分地址族同步失败，请查看各地址族结果"
+		}
+	}
+	sort.Strings(status.Ports)
+}
+func (f *Firewall) syncInputFamily(rules []Rule, c Config, v6 bool) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("防火墙管理仅支持 Linux")
+	}
+	if b, e := f.readFile("/proc/self/status"); e == nil {
 		for _, line := range strings.Split(string(b), "\n") {
 			if strings.HasPrefix(line, "CapEff:") {
 				n, _ := strconv.ParseUint(strings.TrimSpace(strings.TrimPrefix(line, "CapEff:")), 16, 64)
-				if n&(1<<12) == 0 {
-					f.status.State = "error"
-					f.status.Message = "缺少 NET_ADMIN；没有写入任何防火墙规则"
-					return
-				}
-				if n&(1<<13) == 0 {
-					f.status.State = "error"
-					f.status.Message = "legacy iptables 还需 NET_RAW；没有写入任何防火墙规则"
-					return
+				if n&(1<<12) == 0 || n&(1<<13) == 0 {
+					return fmt.Errorf("缺少 NET_ADMIN / NET_RAW，未写入此地址族规则")
 				}
 			}
 		}
 	}
-	for _, v6 := range []bool{false, true} {
-		bin, restore := "iptables-legacy", "iptables-legacy-restore"
-		if v6 {
-			bin, restore = "ip6tables-legacy", "ip6tables-legacy-restore"
-		}
-		if _, e := exec.LookPath(bin); e != nil {
-			f.status.State = "error"
-			f.status.Message = bin + " 不存在，拒绝切换到未知防火墙后端"
-			return
-		}
-		if _, e := f.run(bin, []string{"-w", "3", "-S", fwChain}, ""); e != nil {
-			if _, e = f.run(bin, []string{"-w", "3", "-N", fwChain}, ""); e != nil {
-				f.status.State = "error"
-				f.status.Message = e.Error()
-				return
-			}
-		}
-		if _, e := f.run(restore, []string{"-w", "3", "--noflush"}, buildFirewall(rules, c, v6)); e != nil {
-			f.status.State = "error"
-			f.status.Message = e.Error()
-			return
-		}
-		if _, e := f.run(bin, []string{"-w", "3", "-C", "INPUT", "-j", fwChain}, ""); e != nil {
-			if _, e = f.run(bin, []string{"-w", "3", "-I", "INPUT", "1", "-j", fwChain}, ""); e != nil {
-				f.status.State = "error"
-				f.status.Message = e.Error()
-				return
-			}
+	bin, restore, _ := kernelTools(v6)
+	if _, e := exec.LookPath(bin); e != nil {
+		return fmt.Errorf("%s 不存在；未切换防火墙后端", bin)
+	}
+	if _, e := f.run(bin, []string{"-w", "3", "-S", fwChain}, ""); e != nil {
+		if _, e = f.run(bin, []string{"-w", "3", "-N", fwChain}, ""); e != nil {
+			return e
 		}
 	}
-	for _, r := range rules {
-		if r.OpenFirewall {
-			_, p, _ := hostPort(r.Listen)
-			for _, proto := range ruleProtocols(r) {
-				f.status.Ports = append(f.status.Ports, fmt.Sprintf("%d/%s", p, strings.ToUpper(proto)))
-			}
-		}
+	batch := buildFirewall(rules, c, v6)
+	if _, e := f.run(restore, []string{"-w", "3", "--noflush", "--test"}, batch); e != nil {
+		return e
 	}
-	sort.Strings(f.status.Ports)
-	f.status.State = "applied"
-	f.status.Message = "已同步自身 IPv4/IPv6 规则；每 30 秒复核"
+	if _, e := f.run(restore, []string{"-w", "3", "--noflush"}, batch); e != nil {
+		return e
+	}
+	if _, e := f.run(bin, []string{"-w", "3", "-C", "INPUT", "-j", fwChain}, ""); e != nil {
+		_, e = f.run(bin, []string{"-w", "3", "-I", "INPUT", "1", "-j", fwChain}, "")
+		return e
+	}
+	return nil
 }
 func (f *Firewall) cleanup() {
 	f.mu.Lock()

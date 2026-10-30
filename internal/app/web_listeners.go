@@ -14,8 +14,9 @@ type webSnapshot struct {
 	owners map[string]Rule
 }
 type webRunning struct {
-	ref  *atomic.Pointer[webSnapshot]
-	stop func()
+	ref       *atomic.Pointer[webSnapshot]
+	reconcile func(*webSnapshot)
+	stop      func()
 }
 
 func webListenKey(r Rule) string {
@@ -62,10 +63,10 @@ func validateSharedWebRules(rules []Rule) error {
 			}
 			for _, domain := range domains {
 				domain = routeDomainKey(domain)
-				if owner, ok := seen[key][domain]; ok {
+				if owner, ok := seen[key][domain]; ok && owner != r.ID {
 					return fmt.Errorf("同端口域名 %s 重复：%s 与 %s / %s；默认入口也只能有一个", domain, owner, r.Name, route.Name)
 				}
-				seen[key][domain] = r.Name + " / " + route.Name
+				seen[key][domain] = r.ID
 			}
 		}
 	}

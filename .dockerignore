@@ -17,3 +17,5 @@ linknest-backups
 *.tmp
 *.key
 *.pem
+**/__pycache__
+*.pyc

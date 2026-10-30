@@ -15,13 +15,15 @@ type CertStep struct {
 	Time    string `json:"time"`
 }
 type CertJobStatus struct {
-	ID      string     `json:"id"`
-	State   string     `json:"state"`
-	Stage   string     `json:"stage"`
-	Message string     `json:"message"`
-	Started string     `json:"started"`
-	Updated string     `json:"updated"`
-	Steps   []CertStep `json:"steps"`
+	Failures int        `json:"failures,omitempty"`
+	RetryAt  string     `json:"retryAt,omitempty"`
+	ID       string     `json:"id"`
+	State    string     `json:"state"`
+	Stage    string     `json:"stage"`
+	Message  string     `json:"message"`
+	Started  string     `json:"started"`
+	Updated  string     `json:"updated"`
+	Steps    []CertStep `json:"steps"`
 }
 
 func (c *CertManager) persistJobsLocked() {
@@ -43,7 +45,7 @@ func (c *CertManager) loadJobs() {
 		return
 	}
 	for id, s := range c.states {
-		if s.State == "running" {
+		if s.State == "running" || s.State == "queued" {
 			s.State = "error"
 			s.Message = "上次申请因服务退出而中断，请查看 DNS 临时记录后手动重试"
 			s.Updated = time.Now().Format(time.RFC3339)
@@ -82,6 +84,15 @@ func (c *CertManager) finish(id string, err error) {
 	if err != nil {
 		s.State = "error"
 		s.Message = err.Error()
+		s.Failures++
+		delay := time.Hour * time.Duration(1<<min(s.Failures-1, 4))
+		if delay > 12*time.Hour {
+			delay = 12 * time.Hour
+		}
+		s.RetryAt = time.Now().Add(delay).Format(time.RFC3339)
+	} else {
+		s.Failures = 0
+		s.RetryAt = ""
 	}
 	s.Updated = time.Now().Format(time.RFC3339)
 	s.Steps = append(s.Steps, CertStep{Stage: s.Stage, Message: s.Message, Time: s.Updated})

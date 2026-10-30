@@ -1,12 +1,12 @@
-# syntax=docker/dockerfile:1
-FROM golang:1.26.9-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.9-bookworm AS build
+ARG TARGETARCH
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV CGO_ENABLED=0 GOMAXPROCS=2 GOMEMLIMIT=256MiB
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go test -trimpath ./... && go build -trimpath -ldflags="-s -w" -o /out/linknest ./cmd/linknest
+RUN go test -trimpath ./... && GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/linknest ./cmd/linknest
 RUN mkdir -p /out/licenses && cp /usr/local/go/LICENSE /out/licenses/GO-LICENSE \
     && cp /go/pkg/mod/golang.org/x/crypto@v0.48.0/LICENSE /out/licenses/XCRYPTO-LICENSE \
     && cp /go/pkg/mod/golang.org/x/sys@v0.41.0/LICENSE /out/licenses/XSYS-LICENSE \
@@ -16,7 +16,10 @@ RUN mkdir -p /out/licenses && cp /usr/local/go/LICENSE /out/licenses/GO-LICENSE 
     && cp THIRD_PARTY.md /out/licenses/THIRD_PARTY.md
 
 FROM debian:bookworm-slim AS runtime-files
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates iptables tzdata python3 \
+ARG DEBIAN_MIRROR=http://deb.debian.org
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends ca-certificates iptables tzdata python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/minimal-runtime.py /extract-runtime.py
 RUN python3 /extract-runtime.py --rootfs / --destination /out/runtime
@@ -31,6 +34,11 @@ VOLUME ["/data"]
 EXPOSE 17880/tcp
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["linknest", "healthcheck"]
-LABEL org.opencontainers.image.version="1.1.5" \
+ARG VERSION=1.2.0
+ARG SOURCE_REVISION=unknown
+ARG BUILD_DATE
+LABEL org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$SOURCE_REVISION \
+      org.opencontainers.image.created=$BUILD_DATE \
       org.opencontainers.image.source="https://github.com/daixu0502/linknest"
 ENTRYPOINT ["/usr/local/bin/linknest"]

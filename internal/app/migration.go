@@ -39,6 +39,11 @@ func migrateConfig(c *Config) {
 			r.Target = ""
 			r.Domain = ""
 		}
+		for j := range r.Routes {
+			if r.Routes[j].PathPrefix == "" {
+				r.Routes[j].PathPrefix = "/"
+			}
+		}
 	}
 	for i := range c.DDNS {
 		d := &c.DDNS[i]
@@ -128,6 +133,9 @@ func validateWeb(r Rule, checkID func(string) error) error {
 	domains := map[string]bool{}
 	h, p, _ := hostPort(r.Listen)
 	for _, sub := range r.Routes {
+		if err := validatePathPrefix(sub.PathPrefix); err != nil {
+			return err
+		}
 		if err := checkID(sub.ID); err != nil {
 			return err
 		}
@@ -146,14 +154,18 @@ func validateWeb(r Rule, checkID func(string) error) error {
 			if d != "*" && !domainRE.MatchString(d) && net.ParseIP(strings.Trim(d, "[]")) == nil {
 				return errors.New("前端域名格式错误；请勿包含协议和端口")
 			}
-			if sub.Enabled && domains[d] {
+			key := routeDomainKey(d) + "\x00" + canonicalPrefix(sub.PathPrefix)
+			if sub.Enabled && domains[key] {
 				return errors.New("同一主规则存在重复启用的前端域名")
 			}
 			if sub.Enabled {
-				domains[d] = true
+				domains[key] = true
 			}
 		}
 		if sub.Backend == "bookmarks" || sub.Backend == "wol" {
+			if canonicalPrefix(sub.PathPrefix) != "/" {
+				return errors.New("内置页面使用根路径 /；路径分流用于外部反代后端")
+			}
 			continue
 		}
 		if sub.Backend != "" && sub.Backend != "proxy" {

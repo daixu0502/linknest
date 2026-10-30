@@ -10,13 +10,32 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type RuleStatus struct {
-	ID      string `json:"id"`
+	ID       string         `json:"id"`
+	State    string         `json:"state"`
+	Message  string         `json:"message"`
+	Listener StatusPart     `json:"listener"`
+	Firewall StatusPart     `json:"firewall"`
+	Backend  StatusPart     `json:"backend"`
+	Traffic  *TrafficStatus `json:"traffic,omitempty"`
+}
+type StatusPart struct {
 	State   string `json:"state"`
 	Message string `json:"message"`
+}
+type TrafficStatus struct {
+	Active   int64 `json:"active"`
+	Capacity int   `json:"capacity"`
+	Dropped  int64 `json:"dropped"`
+}
+type forwardCounters struct {
+	active   atomic.Int64
+	dropped  atomic.Int64
+	capacity atomic.Int64
 }
 type running struct {
 	rule   Rule
@@ -24,14 +43,16 @@ type running struct {
 	status RuleStatus
 }
 type Engine struct {
-	access    *access.Manager
-	mu        sync.Mutex
-	store     *Store
-	rules     map[string]*running
-	log       func(string, string)
-	fw        *Firewall
-	webGroups map[string]*webRunning
-	portal    *Portal
+	statusCache atomic.Pointer[[]RuleStatus]
+	traffic     sync.Map
+	access      *access.Manager
+	mu          sync.Mutex
+	store       *Store
+	rules       map[string]*running
+	log         func(string, string)
+	fw          *Firewall
+	webGroups   map[string]*webRunning
+	portal      *Portal
 }
 
 func newEngine(s *Store, log func(string, string), fw *Firewall) *Engine {
@@ -41,19 +62,80 @@ func newEngine(s *Store, log func(string, string), fw *Firewall) *Engine {
 	return e
 }
 func (e *Engine) statuses() []RuleStatus {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	out := []RuleStatus{}
-	for _, r := range e.rules {
-		out = append(out, r.status)
+	if cached := e.statusCache.Load(); cached != nil {
+		out = append(out, (*cached)...)
+	}
+	for i := range out {
+		if value, ok := e.traffic.Load(out[i].ID); ok {
+			v := value.(*forwardCounters)
+			out[i].Traffic = &TrafficStatus{Active: v.active.Load(), Capacity: int(v.capacity.Load()), Dropped: v.dropped.Load()}
+		}
 	}
 	return out
+}
+func (e *Engine) counters(id string) *forwardCounters {
+	value, _ := e.traffic.LoadOrStore(id, &forwardCounters{})
+	return value.(*forwardCounters)
+}
+
+// Called with engine.mu held, after a complete application. Readers never wait
+// on iptables, bind, DNS or certificate disk operations.
+func (e *Engine) publishStatuses() {
+	out := []RuleStatus{}
+	fw := e.fw.get()
+	for _, rr := range e.rules {
+		if value, ok := e.traffic.Load(rr.rule.ID); ok {
+			capacity := int64(128)
+			if rr.rule.Kind == "tcpudp" {
+				capacity = 256
+			}
+			value.(*forwardCounters).capacity.Store(capacity)
+		}
+		s := rr.status
+		s.Listener = StatusPart{State: s.State, Message: s.Message}
+		if rr.rule.ForwardMode == "kernel" {
+			s.Listener = StatusPart{State: "not_applicable", Message: "内核 NAT 不创建监听 socket"}
+		}
+		s.Backend = StatusPart{State: "unchecked", Message: "未检查"}
+		s.Firewall = StatusPart{State: "unmanaged", Message: "未启用自动放行"}
+		if rr.rule.OpenFirewall {
+			s.Firewall = StatusPart{State: "disabled", Message: "未授权防火墙管理"}
+			if fw.Enabled {
+				s.Firewall = StatusPart{State: "applied", Message: "所需地址族已放行"}
+				if rr.rule.ForwardMode == "kernel" {
+					if s.State == "error" {
+						s.Firewall = StatusPart{State: "error", Message: s.Message}
+					}
+				} else {
+					for _, v6 := range []bool{false, true} {
+						if _, ok := listenerAddress(rr.rule, v6); ok {
+							key := "ipv4"
+							if v6 {
+								key = "ipv6"
+							}
+							part, exists := fw.Families[key]
+							if !exists || part.State != "applied" {
+								s.Firewall = StatusPart{State: "error", Message: part.Message}
+								if s.Firewall.Message == "" {
+									s.Firewall.Message = fw.Message
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		out = append(out, s)
+	}
+	e.statusCache.Store(&out)
 }
 func (e *Engine) apply(c Config) {
 	migrateConfig(&c)
 	e.access.Configure(c.Access, c.Whitelist)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	defer e.publishStatuses()
 	desired := map[string]Rule{}
 	groups := map[string][]Rule{}
 	webErrors := map[string]error{}
@@ -90,6 +172,7 @@ func (e *Engine) apply(c Config) {
 				running.stop()
 			}
 			delete(e.rules, id)
+			e.traffic.Delete(id)
 		}
 	}
 	for id, err := range conflicts {
@@ -140,7 +223,7 @@ func (e *Engine) apply(c Config) {
 			}
 		} else {
 			// Publish the complete domain/owner/TLS table in one atomic swap.
-			listener.ref.Store(newWebSnapshot(rules))
+			listener.reconcile(newWebSnapshot(rules))
 		}
 		for _, r := range rules {
 			rr := e.rules[r.ID]
@@ -241,6 +324,7 @@ func (e *Engine) start(r Rule) (func(), error) {
 		ctx, cancel := context.WithCancel(context.Background())
 		var active sync.Map
 		slots := make(chan struct{}, 128)
+		stats := e.counters(r.ID)
 		go func() {
 			for {
 				c, err := ln.Accept()
@@ -253,13 +337,15 @@ func (e *Engine) start(r Rule) (func(), error) {
 				}
 				select {
 				case slots <- struct{}{}:
+					stats.active.Add(1)
 				default:
+					stats.dropped.Add(1)
 					c.Close()
 					continue
 				}
 				active.Store(c, true)
 				go func() {
-					defer func() { <-slots }()
+					defer func() { <-slots; stats.active.Add(-1) }()
 					defer active.Delete(c)
 					defer c.Close()
 					d := net.Dialer{Timeout: 8 * time.Second}
@@ -295,12 +381,12 @@ func (e *Engine) startUDP(r Rule) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	up, err := net.ResolveUDPAddr("udp", r.Target)
-	if err != nil {
-		return nil, err
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	target := udpTarget{raw: r.Target}
+	stats := e.counters(r.ID)
 	ln, err := net.ListenUDP(listenNetwork(r, "udp"), addr)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	var mu sync.Mutex
@@ -324,12 +410,27 @@ func (e *Engine) startUDP(r Rule) (func(), error) {
 			}
 			conn := peers[key]
 			if conn == nil && len(peers) < 128 {
+				mu.Unlock()
+				up, resolveErr := target.get(ctx)
+				mu.Lock()
+				if closed {
+					mu.Unlock()
+					return
+				}
+				if resolveErr != nil {
+					stats.dropped.Add(1)
+					mu.Unlock()
+					continue
+				}
 				conn, err = net.DialUDP("udp", nil, up)
 				if err == nil {
 					peers[key] = conn
+					stats.active.Add(1)
+					conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 					client := *src
 					go func(c *net.UDPConn) {
 						defer c.Close()
+						defer stats.active.Add(-1)
 						defer func() {
 							mu.Lock()
 							if peers[key] == c {
@@ -339,11 +440,11 @@ func (e *Engine) startUDP(r Rule) (func(), error) {
 						}()
 						data := make([]byte, 65535)
 						for {
-							c.SetReadDeadline(time.Now().Add(60 * time.Second))
 							n, er := c.Read(data)
 							if er != nil {
 								return
 							}
+							c.SetReadDeadline(time.Now().Add(60 * time.Second))
 							if e.allowed(client.String()) {
 								ln.WriteToUDP(data[:n], &client)
 							}
@@ -353,11 +454,18 @@ func (e *Engine) startUDP(r Rule) (func(), error) {
 			}
 			mu.Unlock()
 			if conn != nil {
-				conn.Write(buf[:n])
+				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+				conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+				if _, err := conn.Write(buf[:n]); err != nil {
+					stats.dropped.Add(1)
+				}
+			} else {
+				stats.dropped.Add(1)
 			}
 		}
 	}()
 	return func() {
+		cancel()
 		ln.Close()
 		mu.Lock()
 		closed = true

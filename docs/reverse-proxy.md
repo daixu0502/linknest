@@ -29,3 +29,16 @@ LinkNest 在转发前移除客户端传入的 `Forwarded` 和 `X-Forwarded-*` �
 - Motrix 设置 `MOTRIX_PUBLIC_URL=https://motrix.example.com:8888`。
 
 浏览器访问 HTTPS 面板，实时事件通过相同入口的 WSS 转发，无需额外开放 MDXP 或 aria2 RPC。完整面板的后端仍填写 HTTP 根地址，不要改成仅含事件路径的 WS 地址。
+
+## 1.2.0 路径分流
+
+每条外部后端子规则可填写 `pathPrefix`。旧配置迁移为 `/`。同一主规则可以使用相同域名、不同路径；跨主规则的域名归属仍唯一。
+
+| 域名 | 路径前缀 | 后端 |
+| --- | --- | --- |
+| app.example.com | /bridge/ | http://192.0.2.10:16801 |
+| app.example.com | / | http://192.0.2.10:8088 |
+
+先选最具体的域名，再选最长路径段前缀。`/bridge/` 匹配 `/bridge` 与 `/bridge/x`，不匹配 `/bridge-other/`。精确域名下没有符合的路径时返回 404，不落入其他域名的默认后端。前缀不能包含 `.`、`..` 路径段、重复斜杠、查询串或百分号编码。
+
+转发保留原路径、查询参数和编码；若后端 URL 自带基础路径，则按已有反代语义拼接。HTTP、WS/WSS 使用同一套路由，TLS/SNI 证书选择仅取决于域名。Host、Origin 适配及 Upgrade 行为保持原设置。内置轻面板和 WOL 当前仅允许 `/`，避免其绝对资源路径失效。

@@ -293,6 +293,7 @@ func (a *App) twoFactorAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (a *App) revokeOtherSessionsLocked(keep string) {
+	a.terminals.revoke("")
 	for id := range a.sessions {
 		if id != keep {
 			delete(a.sessions, id)

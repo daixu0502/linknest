@@ -17,6 +17,8 @@
 *.pem
 /.tools/
 /local/
+**/__pycache__/
+*.py[cod]
 
 # Tests stay local; Markdown documentation is distributable.
 **/tests/**/*

@@ -105,8 +105,8 @@ func (a *App) checkDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	select {
-	case a.terminalSlots <- struct{}{}:
-		defer func() { <-a.terminalSlots }()
+	case a.deviceSlots <- struct{}{}:
+		defer func() { <-a.deviceSlots }()
 	default:
 		fail(w, 429, "检测或连接正在进行，请稍后重试")
 		return

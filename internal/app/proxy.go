@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"linknest/internal/access"
@@ -15,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+type proxyConnectionKey struct{}
 
 // Exact domain > longest wildcard suffix > explicit catch-all. Unknown hosts
 // never fall through to an unrelated backend.
@@ -93,17 +96,32 @@ func (e *Engine) startWebGroup(rules []Rule) (*webRunning, error) {
 	}
 	verified, insecure := transport(false), transport(true)
 	var connections sync.Map
+	var connectionRoutes sync.Map
+	var routeMu sync.Mutex
 	handler := http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
 		if !e.allowed(q.RemoteAddr) {
 			http.Error(w, "Access denied", 403)
 			return
 		}
-		observed := &access.Response{ResponseWriter: w}
+		observed := &access.Response{ResponseWriter: &upgradeResponse{ResponseWriter: w, connections: &connections, onClose: func(c net.Conn) { connectionRoutes.Delete(c) }}}
 		w = observed
 		defer func() { e.access.Observe(q.RemoteAddr, q.URL.Path, observed.Status) }()
+		routeMu.Lock()
 		snapshot := ref.Load()
-		route, current := snapshot.match(q.Host)
+		route, knownHost := matchRoutePath(snapshot.routes, q.Host, q.URL.Path)
+		current := Rule{}
+		if route != nil {
+			current = snapshot.owners[route.ID]
+			if conn, ok := q.Context().Value(proxyConnectionKey{}).(net.Conn); ok {
+				connectionRoutes.Store(conn, route.ID)
+			}
+		}
+		routeMu.Unlock()
 		if route == nil {
+			if knownHost {
+				http.Error(w, "此路径未匹配到已启用的子规则", http.StatusNotFound)
+				return
+			}
 			http.Error(w, "未匹配到已启用的反向代理子规则（Host not allowed）。\n请使用子规则中配置的完整域名和此监听端口。直接访问 IP 或其他域名不会自动进入轻面板 / WOL；如需使用，请在管理后台将该域名或 IP 明确添加到对应子规则。", 421)
 			return
 		}
@@ -181,12 +199,15 @@ func (e *Engine) startWebGroup(rules []Rule) (*webRunning, error) {
 		}, ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) { http.Error(w, "上游暂不可达", 502) }}
 		proxy.ServeHTTP(w, q)
 	})
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20, ConnState: func(conn net.Conn, state http.ConnState) {
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20, ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+		return context.WithValue(ctx, proxyConnectionKey{}, c)
+	}, ConnState: func(conn net.Conn, state http.ConnState) {
 		if state == http.StateNew {
 			connections.Store(conn, true)
 		}
 		if state == http.StateClosed {
 			connections.Delete(conn)
+			connectionRoutes.Delete(conn)
 		}
 	}}
 	// Always classify both protocols so adding/removing TLS owners is hot-updatable.
@@ -217,7 +238,24 @@ func (e *Engine) startWebGroup(rules []Rule) (*webRunning, error) {
 			e.log("error", r.Name+" 监听已退出")
 		}
 	}()
-	return &webRunning{ref: ref, stop: func() {
+	return &webRunning{ref: ref, reconcile: func(next *webSnapshot) {
+		routeMu.Lock()
+		defer routeMu.Unlock()
+		ref.Store(next)
+		active := map[string]bool{}
+		for _, route := range next.routes {
+			if route.Enabled {
+				active[route.ID] = true
+			}
+		}
+		connectionRoutes.Range(func(k, v any) bool {
+			if !active[v.(string)] {
+				k.(net.Conn).Close()
+				connectionRoutes.Delete(k)
+			}
+			return true
+		})
+	}, stop: func() {
 		server.Close()
 		connections.Range(func(k, v any) bool { k.(net.Conn).Close(); return true })
 		verified.CloseIdleConnections()

@@ -7,7 +7,7 @@
 仓库根目录的 `Dockerfile` 使用 Go 构建阶段、独立 Debian 依赖阶段及 scratch 最终阶段。`scripts/minimal-runtime.py` 按 ELF 动态依赖递归保留 glibc、legacy iptables/ip6tables 和全部 xtables 插件，并保留 CA、完整时区、NSS、协议/服务数据库、shell、读取初始化口令所需的 cat 与发行版许可。Python、包管理器和 Go SDK 只存在于构建阶段：
 
 ```sh
-docker build --platform linux/arm64 -t jacoyyyy/linknest:1.1.5 .
+docker build --platform linux/arm64 -t jacoyyyy/linknest:1.2.0 .
 ```
 
 ## 离线交叉编译发布
@@ -32,28 +32,50 @@ python scripts/release-image.py runtime-lock
 
 输入的任一历史层中出现 LinkNest 程序或许可目录都会被拒绝，即使它在后续层被覆盖或删除也一样。初始输入只复用了此前核对过的 Debian 与系统依赖层，后续发布不读取旧应用镜像。系统依赖更新需要重新裁剪、锁定和验证。
 
-以已提交、干净的独立源码工作树编译 ARM64 程序，把结果放到发布暂存目录。以下为类 Unix shell 示例：
-
-```sh
-source_dir="$PWD/.tools/release-1.1.5-clean/source"
-stage_dir="$PWD/.tools/release-1.1.5-clean"
-cd "$source_dir"
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o "$stage_dir/linknest" ./cmd/linknest
-cd -
-python scripts/release-image.py prepare --version 1.1.5 --source "$source_dir" --stage "$stage_dir"
-```
+离线归档工具保留用于历史材料核对。正式发布使用下面的 WSL 流程，避免把未经过容器验收的交叉编译程序当作发布包。
 
 脚本读取本地 Go SDK 与模块缓存中的依赖许可证，以及工作树中的第三方说明；所有文件缺失均会停止。生成镜像固定为精简运行环境一层、当前程序与许可证一层，后续发布不会逐版累积。`Dockerfile.runtime` 默认使用独立的 `linknest-runtime:minimal-bookworm-arm64`，并拒绝含旧程序或 apt 的基础镜像。
 
 镜像顶层 `created`、当前程序层历史与 `org.opencontainers.image.created` 使用同一个 UTC 时间，默认取源码提交时间；可用非负 Unix 秒值 `SOURCE_DATE_EPOCH` 显式覆盖。这样既保留可重现的构建，也能让 Docker 正确显示镜像日期；`TZ=Asia/Shanghai` 只影响容器内时区，不能补全镜像创建时间。
 
-`release.json` 记录源码提交、创建时间、程序与镜像哈希、运行环境哈希和层数。发布通过本地 `.tools/registry/crane.exe` 完成，令牌从 `local/dockerhub-token.txt` 读取，经标准输入登录；可用 `HTTP_PROXY` / `HTTPS_PROXY` 指定代理：
-
-```sh
-python scripts/release-image.py publish --version 1.1.5 --source "$source_dir" --stage "$stage_dir"
-python scripts/release-image.py artifacts --version 1.1.5 --source "$source_dir" --stage "$stage_dir"
-```
-
-推送前核对归档哈希；推送后核对远端完整配置和层摘要，再将 `latest` 指向同一摘要。离线镜像与源码 ZIP 输出到 `dist/`。源码归档来自 Git 已提交内容，发布前必须检查索引，确保测试、`local/`、依赖缓存和密钥均未提交。发布成功后删除临时 Docker 登录目录和原始令牌文件。
+旧版 `release-image.py` 仅保留历史归档核对；1.2.0 起的 prepare / publish 会拒绝执行，统一使用下方的 WSL 验收与发布入口。发布产物、日志、备份及凭据均不得提交到源码仓库。
 
 ARM64 实机验证范围见 [精简镜像验证](minimal-image-validation.md)。
+
+## WSL 验收和生产替换（1.2.0 起）
+
+源码来自 Windows 工作区，构建、Go/race、Chromium、ARM64 仿真、内核命名空间和备份恢复检查都在 WSL 的本地 Docker 执行。脚本拒绝远程 Docker context；不用 NAS 充当构建机。按工作区约定，本地测试文件和依赖不提交，缺少验收文件时脚本会停止。
+
+```powershell
+python scripts/release-wsl.py --node-modules C:/path/to/node_modules
+```
+
+默认 Go 与 Debian 下载镜像可分别用 `--goproxy` 和 `--debian-mirror` 指定。脚本加载 WSL 已安装的 IPv6 NAT 模块并注册 ARM64 binfmt；不修改宿主防火墙规则。内核转发流量只经过新建的隔离网络命名空间。生成的两种架构镜像均不超过 64 MiB，超限会中止。
+
+验收通过后，`.tools/validation-1.2.0/accepted.json` 记录源码摘要、不可变镜像 ID、归档哈希及全部检查；`candidate-arm64.tar` 为路由器候选镜像，`rollback-helper-arm64.tar` 仅用于完整备份哈希与回滚清理。任一失败不会留下可复用的通过标记，源码变化后必须重新验收。
+
+部署先做只读检查，`known_hosts` 必须是此前已经核对的主机密钥文件：
+
+```powershell
+python scripts/deploy-router.py --known-hosts C:/path/to/verified-known-hosts --preflight
+python scripts/deploy-router.py --known-hosts C:/path/to/verified-known-hosts
+```
+
+脚本仅接受验收过且源码未变的归档。固定流程为：只读能力检查 → 导入候选及备份工具 → 记录业务基线 → 保存旧镜像 → 停止旧容器 → Docker 复制全部数据并核对哈希 → 通过 Docker API 完整保留容器参数及原数据卷创建新容器 → 核对版本、schema、已有业务入口和内核 NAT 规则。
+
+检测失败时停止候选、保存失败现场、清空并恢复原数据卷，核对升级前哈希，再启动保留的旧容器。升级前镜像、数据和旧容器均保留，不自动删除 1.1.5 回滚材料。手动回滚使用本次生成的记录：
+
+```powershell
+python scripts/deploy-router.py --known-hosts C:/path/to/verified-known-hosts --rollback .tools/validation-1.2.0/deployment-YYYYMMDD-HHMMSS.json
+```
+
+HTTP 检查使用真实域名和路径；TCP 检查验证已有监听链路，不能替代应用协议的业务断言。IPv6 反代另从路由器回环连接检查，不能据此承诺公网 IPv6 可达。未配置的 IPv6 NAT 不在生产环境额外创建测试规则；能力检测与 WSL 流量验收分别记录。
+
+
+生产验收完成后，从与候选源码完全一致的干净提交工作树发布：
+
+```powershell
+python scripts/publish-wsl.py --source-worktree .tools/release-1.2.0-source --deployment .tools/validation-1.2.0/deployment-YYYYMMDD-HHMMSS.json
+```
+
+发布脚本从终端读取 Docker Hub 令牌，使用临时登录目录，完成后退出并删除该目录。先推送、回拉核对 amd64 和 ARM64 镜像，再生成 `1.2.0` 多架构索引；核对完成后才更新 `latest`。`published.json` 保存远端摘要和对应源码提交。旧离线 `release-image.py` 不作为 1.2.0 及以后版本的正式发布入口。

@@ -47,23 +47,31 @@ type Event struct {
 	Message string `json:"message"`
 }
 type App struct {
-	iconMu           sync.Mutex
-	routerIPs        routerIPCache
-	mu               sync.Mutex
-	updateMu         sync.Mutex
-	store            *Store
-	engine           *Engine
-	dns              *DNSManager
-	certs            *CertManager
-	upnp             *UPnPManager
-	auth             authConfig
-	bootstrap        string
-	sessions         map[string]session
-	failures         map[string]attempt
-	events           []Event
-	admin            string
-	terminalSlots    chan struct{}
-	twoFactorPending *twoFactorEnrollment
+	applyMu                   sync.Mutex
+	applyWG                   sync.WaitGroup
+	applySequence             uint64
+	applyRunning, applyClosed bool
+	applyStatus               ApplyStatus
+	terminals                 terminalRegistry
+	deviceSlots               chan struct{}
+	diagnostics               diagnosticCache
+	iconMu                    sync.Mutex
+	routerIPs                 routerIPCache
+	mu                        sync.Mutex
+	updateMu                  sync.Mutex
+	store                     *Store
+	engine                    *Engine
+	dns                       *DNSManager
+	certs                     *CertManager
+	upnp                      *UPnPManager
+	auth                      authConfig
+	bootstrap                 string
+	sessions                  map[string]session
+	failures                  map[string]attempt
+	events                    []Event
+	admin                     string
+	terminalSlots             chan struct{}
+	twoFactorPending          *twoFactorEnrollment
 }
 
 func (a *App) event(level, message string) {
@@ -92,7 +100,7 @@ func newApp(dir, addr string, firewall bool) (*App, error) {
 	if err = validate(s.snapshot(), addr); err != nil {
 		return nil, fmt.Errorf("配置校验失败：%w", err)
 	}
-	a := &App{store: s, admin: addr, sessions: map[string]session{}, failures: map[string]attempt{}, events: []Event{}, terminalSlots: make(chan struct{}, 2)}
+	a := &App{store: s, admin: addr, sessions: map[string]session{}, failures: map[string]attempt{}, events: []Event{}, terminalSlots: make(chan struct{}, 2), deviceSlots: make(chan struct{}, 2)}
 	if b, e := os.ReadFile(filepath.Join(dir, "auth.json")); e == nil {
 		if e = json.Unmarshal(b, &a.auth); e != nil {
 			return nil, e
@@ -193,6 +201,7 @@ func (a *App) authenticated(r *http.Request) bool {
 	}
 	if ok && !time.Now().Before(s.expires) {
 		delete(a.sessions, c.Value)
+		a.terminals.revoke(c.Value)
 	}
 	return false
 }
@@ -398,6 +407,15 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
+	if p == "/api/diagnostics" && r.Method == "GET" {
+		a.diagnostics.refresh(a.engine.fw)
+		respond(w, 200, a.diagnostics.snapshot())
+		return
+	}
+	if p == "/api/rules/check" && r.Method == "POST" {
+		a.checkBackend(w, r)
+		return
+	}
 	if strings.HasPrefix(p, "/api/upnp/") {
 		a.upnpAPI(w, r)
 		return
@@ -459,13 +477,14 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 		a.auth = auth
 		a.sessions = map[string]session{}
+		a.terminals.revoke("")
 		a.twoFactorPending = nil
 		clearAdminCookie(w, r)
 		respond(w, 200, map[string]bool{"ok": true})
 		return
 	}
 	if p == "/api/state" && r.Method == "GET" {
-		c := a.store.snapshot()
+		c, revision := a.store.snapshotRevision()
 		hasSecret := c.DNS.Secret != ""
 		c, credentialFlags := redactedConfig(c)
 		a.mu.Lock()
@@ -473,12 +492,16 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		username := a.auth.Username
 		twoFactor := twoFactorState(a.auth)
 		a.mu.Unlock()
-		respond(w, 200, map[string]any{"ok": true, "version": version, "config": c, "username": username, "twoFactor": twoFactor, "dnsSecretSet": hasSecret, "credentialFlags": credentialFlags, "interfaces": interfaces(), "routerIPs": a.routerIPs.snapshot(), "rules": a.engine.statuses(), "firewall": a.engine.fw.get(), "ddns": a.dns.status(), "certificates": a.certs.list(), "certificateTasks": a.certs.tasks(), "certificateJobs": a.certs.status(), "events": events, "adminAddress": a.admin, "adminTlsStatus": a.adminTLSStatus(), "upnpPorts": a.upnpPortsStatus(c.Rules)})
+		respond(w, 200, map[string]any{"ok": true, "version": version, "config": c, "configRevision": revision, "application": a.applicationStatus(), "diagnostics": a.diagnostics.snapshot(), "username": username, "twoFactor": twoFactor, "dnsSecretSet": hasSecret, "credentialFlags": credentialFlags, "interfaces": interfaces(), "routerIPs": a.routerIPs.snapshot(), "rules": a.ruleStatuses(revision), "firewall": a.engine.fw.get(), "ddns": a.dns.status(), "certificates": a.certs.list(), "certificateTasks": a.certs.tasks(), "certificateJobs": a.certs.status(), "events": events, "adminAddress": a.admin, "adminTlsStatus": a.adminTLSStatus(), "upnpPorts": a.upnpPortsStatus(c.Rules)})
 		return
 	}
 	if p == "/api/config" && r.Method == "PUT" {
 		var c Config
 		if !decode(w, r, &c) {
+			return
+		}
+		if r.Header.Get("If-Match") == "" {
+			fail(w, 428, "页面缺少配置版本，请刷新后重试")
 			return
 		}
 		migrateConfig(&c)
@@ -507,14 +530,28 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		before := a.store.snapshot()
-		if err := a.store.save(c); err != nil {
+		if err := a.store.saveExpected(c, r.Header.Get("If-Match")); err != nil {
+			if errors.Is(err, errConfigConflict) {
+				fail(w, 412, err.Error())
+				return
+			}
+			if errors.Is(err, errCredentialChange) {
+				fail(w, 400, err.Error())
+				return
+			}
 			fail(w, 500, "保存失败："+err.Error())
 			return
 		}
-		a.engine.apply(a.store.snapshot())
+		if !c.TerminalEnabled {
+			a.mu.Lock()
+			a.terminals.revoke("")
+			a.mu.Unlock()
+		}
+		a.queueApply()
 		a.dns.configChanged(before, a.store.snapshot())
-		a.event("info", "配置已保存并应用，请核对每条规则的实际状态")
-		respond(w, 200, map[string]bool{"ok": true})
+		a.event("info", "配置已保存，正在应用")
+		_, revision := a.store.snapshotRevision()
+		respond(w, 202, map[string]any{"ok": true, "configRevision": revision, "applyState": "pending"})
 		return
 	}
 	if p == "/api/export" && r.Method == "GET" {
@@ -529,6 +566,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		if c != nil {
 			a.mu.Lock()
 			delete(a.sessions, c.Value)
+			a.terminals.revoke(c.Value)
 			a.mu.Unlock()
 		}
 		clearAdminCookie(w, r)
@@ -722,8 +760,11 @@ func Run() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	server := &http.Server{Addr: addr, Handler: a.handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32768}
-	a.engine.apply(a.store.snapshot())
+	a.queueApply()
+	a.diagnostics.refresh(a.engine.fw)
 	defer a.engine.close()
+	defer a.closeApply()
+	defer a.terminals.revoke("")
 	accessDone := make(chan struct{})
 	defer func() { cancel(); <-accessDone }()
 	go func() {
@@ -747,21 +788,20 @@ func Run() {
 		defer tick.Stop()
 		ddns := time.NewTicker(time.Second)
 		defer ddns.Stop()
-		renew := time.NewTicker(12 * time.Hour)
+		a.certs.tickRenewals()
+		renew := time.NewTicker(time.Minute)
 		defer renew.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
-				a.updateMu.Lock()
 				_ = a.engine.access.Flush()
-				a.engine.apply(a.store.snapshot())
-				a.updateMu.Unlock()
+				a.queueApply()
 			case <-ddns.C:
 				a.dns.tick(time.Now())
 			case <-renew.C:
-				a.certs.renew()
+				a.certs.tickRenewals()
 			}
 		}
 	}()

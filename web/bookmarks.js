@@ -41,7 +41,7 @@ async function bookmarkAction(key){
  if(action==='panel-tab'){navigatePage('bookmarks',id);return true;}
  if(action==='bookmark-import'){
   const r=state.config.rules.find(x=>x.id===id),s=r.routes.find(x=>x.id===subID),port=r.listen.slice(r.listen.lastIndexOf(':')+1);
-  const urls=(s.domains||[]).filter(h=>!h.includes('*')).map(h=>(r.tls?'https':'http')+'://'+h+':'+port+'/');
+  const urls=(s.domains||[]).filter(h=>!h.includes('*')).map(h=>(r.tls?'https':'http')+'://'+h+':'+port+(s.pathPrefix||'/'));
   editBookmark('',{name:s.name,urls,internalUrls:s.backend==='proxy'||!s.backend?[s.target]:[]});return true;
  }
  if(action==='bookmark-toggle'){const b=state.config.bookmarks.find(x=>x.id===id);await saveItem('bookmarks',{...b,disabled:!b.disabled});return true;}
@@ -68,5 +68,5 @@ document.addEventListener('submit',e=>{
  if(form.dataset.tab==='network')Object.assign(c.panel,{networkMode:d.networkMode,internalCidrs:d.internalCidrs.split(/\r?\n/).map(s=>s.trim()).filter(Boolean)});
  if(form.dataset.tab==='global')for(const k of ['title','subtitle','logo','favicon'])c.panel[k]=d[k].trim();
  if(form.dataset.tab==='appearance')Object.assign(c.panel,{theme:d.theme,layout:d.layout,backgroundPreset:d.backgroundPreset,background:d.background.trim(),hideDescription:!form.elements.showDescription.checked,hideHeader:!form.elements.showHeader.checked,hideSearch:!form.elements.showSearch.checked,showClock:form.elements.showClock.checked,clockStyle:d.clockStyle,hideWebSearch:!form.elements.showWebSearch.checked,searchEngine:d.searchEngine});
- busy($('button[type=submit]',form),()=>saveConfig(c));
+ busy($('button[type=submit]',form),()=>saveConfig(c,form));
 });

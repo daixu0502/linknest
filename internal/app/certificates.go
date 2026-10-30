@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ import (
 )
 
 type CertInfo struct {
+	Source        string   `json:"source"`
+	NotBefore     string   `json:"notBefore"`
 	ID            string   `json:"id"`
 	Domains       []string `json:"domains"`
 	Expires       string   `json:"expires"`
@@ -45,15 +48,19 @@ type CertRequest struct {
 	SecretSet bool       `json:"secretSet,omitempty"`
 }
 type CertManager struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	closed bool
-	mu     sync.Mutex
-	store  *Store
-	busy   map[string]bool
-	states map[string]CertJobStatus
-	log    func(string, string)
+	queue     []CertRequest
+	worker    bool
+	nextScan  time.Time
+	issueWork func(context.Context, CertRequest) error
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	closed    bool
+	mu        sync.Mutex
+	store     *Store
+	busy      map[string]bool
+	states    map[string]CertJobStatus
+	log       func(string, string)
 }
 
 func newCerts(s *Store, log func(string, string)) *CertManager {
@@ -78,7 +85,7 @@ func (c *CertManager) list() []CertInfo {
 	paths, _ := filepath.Glob(filepath.Join(c.store.dir, "certificates", "*.pem"))
 	for _, p := range paths {
 		id := strings.TrimSuffix(filepath.Base(p), ".pem")
-		v := CertInfo{ID: id}
+		v := CertInfo{ID: id, Source: "unknown"}
 		b, _ := os.ReadFile(p)
 		block, _ := pem.Decode(b)
 		if block == nil {
@@ -89,13 +96,31 @@ func (c *CertManager) list() []CertInfo {
 			v.Domains = cert.DNSNames
 			v.Expires = cert.NotAfter.Format(time.RFC3339)
 			v.Issuer = cert.Issuer.CommonName
+			v.NotBefore = cert.NotBefore.Format(time.RFC3339)
+			v.Staging = strings.Contains(strings.ToLower(v.Issuer), "staging") || strings.Contains(strings.ToLower(v.Issuer), "fake le")
 			v.RemainingDays = int(time.Until(cert.NotAfter).Hours() / 24)
+		}
+		if _, err := tls.X509KeyPair(b, b); err != nil {
+			v.Error = "证书与私钥不匹配或损坏"
+		}
+		for rest := b; len(rest) > 0; {
+			block, next := pem.Decode(rest)
+			if block == nil {
+				break
+			}
+			rest = next
+			if block.Type == "LINKNEST CERTIFICATE METADATA" {
+				var meta certificateOrigin
+				if json.Unmarshal(block.Bytes, &meta) == nil {
+					v.Source = meta.Source
+					v.Staging = meta.Staging
+				}
+			}
 		}
 		if b, err := os.ReadFile(filepath.Join(c.store.dir, "certificates", id+".renew.json")); err == nil {
 			var req CertRequest
 			if json.Unmarshal(b, &req) == nil {
 				v.AutoRenew = !req.Disabled
-				v.Staging = req.Staging
 				v.Name = req.Name
 			}
 		}
@@ -103,7 +128,16 @@ func (c *CertManager) list() []CertInfo {
 	}
 	return out
 }
+
+type certificateOrigin struct {
+	Source  string `json:"source"`
+	Staging bool   `json:"staging"`
+}
+
 func (c *CertManager) savePair(id string, cert, key []byte) error {
+	return c.savePairOrigin(id, cert, key, certificateOrigin{Source: "imported"})
+}
+func (c *CertManager) savePairOrigin(id string, cert, key []byte, origin certificateOrigin) error {
 	if !validID.MatchString(id) {
 		return errors.New("证书 ID 无效")
 	}
@@ -118,6 +152,12 @@ func (c *CertManager) savePair(id string, cert, key []byte) error {
 	p := filepath.Join(c.store.dir, "certificates", id)
 	// One atomic replacement prevents concurrent handshakes from seeing a mismatched pair.
 	bundle := append(append(append([]byte{}, cert...), '\n'), key...)
+	if origin.Source == "imported" {
+		issuer := strings.ToLower(leaf.Issuer.CommonName)
+		origin.Staging = strings.Contains(issuer, "staging") || strings.Contains(issuer, "fake le")
+	}
+	metadata, _ := json.Marshal(origin)
+	bundle = append(bundle, pem.EncodeToMemory(&pem.Block{Type: "LINKNEST CERTIFICATE METADATA", Bytes: metadata})...)
 	return writeAtomic(p+".pem", bundle)
 }
 func (c *CertManager) importPair(id string, cert, key []byte) error {
@@ -200,12 +240,6 @@ func (c *CertManager) start(r CertRequest) error {
 		c.mu.Unlock()
 		return errors.New("证书任务已在运行")
 	}
-	for _, v := range c.busy {
-		if v {
-			c.mu.Unlock()
-			return errors.New("首版同一时间只运行一个证书任务")
-		}
-	}
 	var err error
 	r, err = c.saveTaskLocked(r)
 	if err != nil {
@@ -213,19 +247,42 @@ func (c *CertManager) start(r CertRequest) error {
 		return err
 	}
 	c.busy[r.ID] = true
-	c.wg.Add(1)
-	c.states[r.ID] = CertJobStatus{ID: r.ID, State: "running", Stage: "prepare", Message: "准备申请", Started: time.Now().Format(time.RFC3339), Updated: time.Now().Format(time.RFC3339), Steps: []CertStep{}}
+	previous := c.states[r.ID]
+	c.states[r.ID] = CertJobStatus{ID: r.ID, State: "queued", Stage: "prepare", Message: "已加入申请队列", Updated: time.Now().Format(time.RFC3339), Steps: []CertStep{}, Failures: previous.Failures}
+	c.queue = append(c.queue, r)
 	c.persistJobsLocked()
+	if !c.worker {
+		c.worker = true
+		c.wg.Add(1)
+		go c.runQueue()
+	}
 	c.mu.Unlock()
-	go func() {
-		defer c.wg.Done()
-		ctx, cancel := context.WithTimeout(c.ctx, 15*time.Minute)
-		defer cancel()
-		err := c.issue(ctx, r)
-		c.finish(r.ID, err)
-	}()
 	return nil
 }
+func (c *CertManager) runQueue() {
+	defer c.wg.Done()
+	for {
+		c.mu.Lock()
+		if c.closed || len(c.queue) == 0 {
+			c.worker = false
+			c.mu.Unlock()
+			return
+		}
+		r := c.queue[0]
+		c.queue = c.queue[1:]
+		c.mu.Unlock()
+		c.progress(r.ID, "prepare", "正在申请")
+		ctx, cancel := context.WithTimeout(c.ctx, 15*time.Minute)
+		work := c.issueWork
+		if work == nil {
+			work = c.issue
+		}
+		err := work(ctx, r)
+		cancel()
+		c.finish(r.ID, err)
+	}
+}
+
 func (c *CertManager) issue(ctx context.Context, r CertRequest) error {
 	r = normalizeCertRequest(r)
 	c.progress(r.ID, "prepare", "准备独立证书凭据与 ACME 账户")
@@ -354,13 +411,42 @@ func (c *CertManager) issue(ctx context.Context, r CertRequest) error {
 	}
 	der, _ := x509.MarshalECPrivateKey(certKey)
 	c.progress(r.ID, "save", "校验证书与私钥，保存证书文件")
-	if err = c.savePair(r.ID, certPEM, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})); err != nil {
+	if err = c.savePairOrigin(r.ID, certPEM, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), certificateOrigin{Source: "acme", Staging: r.Staging}); err != nil {
 		return err
 	}
 	return nil
 }
+func (c *CertManager) tickRenewals() {
+	c.mu.Lock()
+	due := c.nextScan.IsZero() || !time.Now().Before(c.nextScan)
+	if !due {
+		for id, s := range c.states {
+			next, e := time.Parse(time.RFC3339, s.RetryAt)
+			if e == nil && !time.Now().Before(next) && !c.busy[id] {
+				due = true
+				break
+			}
+		}
+	}
+	c.mu.Unlock()
+	if due {
+		c.renew()
+	}
+}
 func (c *CertManager) renew() {
-	for _, i := range c.list() {
+	c.mu.Lock()
+	c.nextScan = time.Now().Add(12 * time.Hour)
+	c.mu.Unlock()
+	list := c.list()
+	sort.SliceStable(list, func(i, j int) bool { return list[i].Expires < list[j].Expires })
+	for _, i := range list {
+		c.mu.Lock()
+		job := c.states[i.ID]
+		busy := c.busy[i.ID]
+		c.mu.Unlock()
+		if next, e := time.Parse(time.RFC3339, job.RetryAt); busy || e == nil && time.Now().Before(next) {
+			continue
+		}
 		if !i.AutoRenew || i.Error != "" {
 			continue
 		}
@@ -385,7 +471,9 @@ func (c *CertManager) renew() {
 				c.log("error", "证书 "+r.ID+" 续期凭据无法读取")
 				continue
 			}
-			c.start(r)
+			if err := c.start(r); err != nil {
+				c.log("error", "证书 "+r.ID+" 无法加入续期队列："+err.Error())
+			}
 		}
 	}
 }

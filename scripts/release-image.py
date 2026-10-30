@@ -198,13 +198,15 @@ def artifacts(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["runtime-lock", "prepare", "publish", "artifacts"])
-    parser.add_argument("--version", default="1.1.5")
+    parser.add_argument("--version", default="1.2.0")
     parser.add_argument("--source", type=Path, default=ROOT)
     parser.add_argument("--stage", type=Path)
     parser.add_argument("--runtime-base", type=Path, default=ROOT / ".tools/runtime-base/minimal-bookworm-arm64.tar")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-a-zA-Z0-9.]+)?", args.version):
         parser.error("Invalid release version")
+    if args.mode in {"prepare", "publish"} and tuple(map(int, args.version.split("-")[0].split(".")[:3])) >= (1, 2, 0):
+        parser.error("Use release-wsl.py and publish-wsl.py for 1.2.0+; WSL and router acceptance are required")
     args.source = args.source.resolve()
     args.stage = (args.stage or ROOT / (".tools/release-" + args.version)).resolve()
     args.stage.mkdir(parents=True, exist_ok=True)

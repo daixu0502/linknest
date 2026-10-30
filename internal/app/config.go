@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -21,8 +22,8 @@ import (
 	"sync"
 )
 
-const version = "1.1.5"
-const configSchema = 4
+const version = "1.2.0"
+const configSchema = 5
 
 type Rule struct {
 	ID               string     `json:"id"`
@@ -46,6 +47,7 @@ type WebRoute struct {
 	Name           string   `json:"name"`
 	Enabled        bool     `json:"enabled"`
 	Domains        []string `json:"domains"`
+	PathPrefix     string   `json:"pathPrefix"`
 	Target         string   `json:"target"`
 	SkipTLSVerify  bool     `json:"skipTlsVerify"`
 	PreserveHost   bool     `json:"preserveHost,omitempty"`
@@ -208,6 +210,7 @@ func newStore(dir string) (*Store, error) {
 	}
 	s.key = b
 	b, err = os.ReadFile(filepath.Join(dir, "config.json"))
+	existingConfig := err == nil
 	if err == nil {
 		err = json.Unmarshal(b, &s.cfg)
 	} else if errors.Is(err, os.ErrNotExist) {
@@ -219,16 +222,33 @@ func newStore(dir string) (*Store, error) {
 	if s.cfg.Schema > configSchema {
 		return nil, errors.New("配置来自更新版本，请勿直接降级")
 	}
+	previousSchema := s.cfg.Schema
 	migrateConfig(&s.cfg)
+	if existingConfig && previousSchema < configSchema {
+		// Persist the migrated representation atomically. Do not run credential
+		// replacement logic: existing encrypted secrets and password hashes must
+		// remain byte-for-byte unchanged during a schema upgrade.
+		data, e := json.MarshalIndent(s.cfg, "", "  ")
+		if e != nil {
+			return nil, e
+		}
+		if e = writeAtomic(filepath.Join(dir, "config.json"), data); e != nil {
+			return nil, fmt.Errorf("保存迁移后的配置失败：%w", e)
+		}
+	}
 	return s, nil
 }
 func (s *Store) snapshot() Config {
+	c, _ := s.snapshotRevision()
+	return c
+}
+func (s *Store) snapshotRevision() (Config, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	b, _ := json.Marshal(s.cfg)
 	var c Config
 	_ = json.Unmarshal(b, &c)
-	return c
+	return c, fmt.Sprintf("\"%x\"", sha256.Sum256(b))
 }
 
 // Packet hot path: never JSON-copy credentials, certificates, and bookmarks.
@@ -238,8 +258,22 @@ func (s *Store) blockedIP(ip net.IP) bool {
 	return blocked(ip, s.cfg)
 }
 func (s *Store) save(c Config) error {
+	return s.saveExpected(c, "")
+}
+
+var errCredentialChange = errors.New("更换 AccessKey ID 时必须重新填写 Secret")
+
+var errConfigConflict = errors.New("配置已被其他页面修改；请保留草稿并重新核对")
+
+func (s *Store) saveExpected(c Config, expected string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if expected != "" {
+		b, _ := json.Marshal(s.cfg)
+		if expected != fmt.Sprintf("\"%x\"", sha256.Sum256(b)) {
+			return errConfigConflict
+		}
+	}
 	if c.Schema > configSchema {
 		return errors.New("配置来自更新版本，请勿直接降级")
 	}
@@ -287,6 +321,9 @@ func (s *Store) save(c Config) error {
 		previous := ""
 		for _, old := range s.cfg.DDNS {
 			if old.ID == r.ID {
+				if r.Account.AccessKeyID != old.Account.AccessKeyID && r.Account.Secret == "" && r.Account.AccessKeyID != "" {
+					return errCredentialChange
+				}
 				previous = old.Account.Secret
 			}
 		}
@@ -303,6 +340,9 @@ func (s *Store) save(c Config) error {
 			}
 			r.Account.Secret = sealed
 		}
+	}
+	if c.DNS.AccessKeyID != s.cfg.DNS.AccessKeyID && c.DNS.Secret == "" && c.DNS.AccessKeyID != "" {
+		return errCredentialChange
 	}
 	if c.DNS.Secret == "" || c.DNS.Secret == s.cfg.DNS.Secret {
 		c.DNS.Secret = s.cfg.DNS.Secret

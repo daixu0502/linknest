@@ -13,7 +13,7 @@ function notice(text,warning=false,id=''){
  const key=id||text;
  if(hiddenNotices.has(key)||mutedNotices.has(key))return '';
  const action=esc(encodeURIComponent(key));
- return `<div class="notice dismissible-notice">${icon('info')}<span class="notice-text">${esc(text)}</span><div class="notice-actions"><button type="button" data-action="notice-hide:${action}" title="本次浏览器会话隐藏">隐藏</button><button type="button" data-action="notice-mute:${action}" title="此浏览器不再显示，可在设置中恢复">不再提示</button></div></div>`;
+ return `<div class="notice dismissible-notice">${icon('info')}<span class="notice-text">${esc(text)}</span><button type="button" class="help-expand" data-action="help-expand" aria-expanded="false">展开说明</button><div class="notice-actions"><button type="button" data-action="notice-hide:${action}" title="本次浏览器会话隐藏">隐藏</button><button type="button" data-action="notice-mute:${action}" title="此浏览器不再显示，可在设置中恢复">不再提示</button></div></div>`;
 }
 function noticeAction(action,button){
  if(action==='notice-restore'){

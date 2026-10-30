@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +50,21 @@ func (a *App) terminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer ws.Close()
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	ck, _ := r.Cookie(adminCookieName(r))
+	if ck == nil {
+		return
+	}
+	a.mu.Lock()
+	session, validSession := a.sessions[ck.Value]
+	if !validSession || time.Now().After(session.expires) || !a.store.snapshot().TerminalEnabled {
+		a.mu.Unlock()
+		return
+	}
+	remove := a.terminals.add(ck.Value, func() { cancel(); ws.Close() })
+	a.mu.Unlock()
+	defer remove()
 	ws.SetReadLimit(16384)
 	ws.SetReadDeadline(time.Now().Add(20 * time.Second))
 	var q struct {
@@ -84,11 +100,13 @@ func (a *App) terminal(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}}
-	raw, e := net.DialTimeout("tcp", host.Address, 8*time.Second)
+	raw, e := (&net.Dialer{Timeout: 8 * time.Second}).DialContext(ctx, "tcp", host.Address)
 	if e != nil {
 		ws.WriteJSON(map[string]string{"error": "SSH 主机不可达"})
 		return
 	}
+	stopCancel := context.AfterFunc(ctx, func() { raw.Close() })
+	defer stopCancel()
 	raw.SetDeadline(time.Now().Add(10 * time.Second))
 	cc, chans, reqs, e := ssh.NewClientConn(raw, host.Address, conf)
 	if e != nil {
@@ -129,7 +147,8 @@ func (a *App) terminal(w http.ResponseWriter, r *http.Request) {
 	}
 	a.event("info", "已打开 SSH 终端："+host.Name+"（最多 15 分钟，不记录命令内容）")
 	defer a.event("info", "SSH 终端已关闭："+host.Name)
-	timer := time.AfterFunc(15*time.Minute, func() { ws.Close(); conn.Close() })
+	lifetime := min(15*time.Minute, time.Until(session.expires))
+	timer := time.AfterFunc(lifetime, func() { ws.Close(); conn.Close() })
 	defer timer.Stop()
 	ws.SetReadDeadline(time.Now().Add(15 * time.Minute))
 	var writeMu sync.Mutex
