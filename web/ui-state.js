@@ -33,6 +33,43 @@ function syncStateBanner(){
  const app=state?.application;el.className='state-status'+(stateReadError||app?.state==='error'?' error':'');
  el.textContent=stateReadError?`${stateReadError}；保留上次结果${lastStateSuccess?'（'+new Date(lastStateSuccess).toLocaleTimeString()+'）':''}`:app?.state==='pending'?'配置已保存，正在应用…':app?.state==='error'?app.message:lastStateSuccess?'状态更新于 '+new Date(lastStateSuccess).toLocaleTimeString():'';
 }
+// The tab bar stays mounted. Only the content below it enters on tab changes.
+function pageContentMarkup(animate=false){
+ const fragment=document.createElement('template');fragment.innerHTML=pageContent();
+ const candidate=fragment.content.firstElementChild,tabs=candidate?.matches('.panel-tabs')?candidate:null;
+ const tabHTML=tabs?.outerHTML||'';tabs?.remove();
+ const action=pageAction();
+ if(action){
+  const toolbar=fragment.content.querySelector('.rule-toolbar'),head=fragment.content.querySelector('.panel-head');
+  if(toolbar)toolbar.insertAdjacentHTML('beforeend',`<div class="actions content-actions">${action}</div>`);
+  else if(head){
+   let actions=head.querySelector(':scope > .actions');
+   if(!actions){actions=document.createElement('div');actions.className='actions';while(head.children.length>1)actions.append(head.children[1]);head.append(actions);}
+   actions.insertAdjacentHTML('beforeend',action);
+  }
+ }
+ return `${tabHTML}<div class="page-body${animate?' page-transition':''}">${fragment.innerHTML}</div>`;
+}
+function patchPageContent(content,next,changed=false){
+ const tabs=content.querySelector(':scope > .panel-tabs'),nextTabs=next.querySelector(':scope > .panel-tabs');
+ if(tabs&&nextTabs){
+  for(const button of tabs.querySelectorAll('button')){
+   const match=[...nextTabs.querySelectorAll('button')].find(b=>b.dataset.action===button.dataset.action);
+   if(match)patchNode(button,match);
+  }
+  const body=content.querySelector(':scope > .page-body'),nextBody=next.querySelector(':scope > .page-body');
+  if(changed)body.replaceWith(nextBody);else patchNode(body,nextBody);
+ }else if(changed)content.replaceChildren(...next.childNodes);else patchNode(content,next);
+ syncTabIndicators();
+}
+function syncTabIndicators(){
+ for(const tabs of document.querySelectorAll('#page-content > .panel-tabs')){
+  const selected=tabs.querySelector('[aria-selected=true],[aria-current=page]');if(!selected)continue;
+  tabs.style.setProperty('--tab-x',selected.offsetLeft+'px');
+  tabs.style.setProperty('--tab-width',selected.offsetWidth+'px');
+  if(!tabs.classList.contains('has-tab-indicator')){tabs.getBoundingClientRect();tabs.classList.add('has-tab-indicator');}
+ }
+}
 function nodeIdentity(node){if(node.nodeType!==1)return '';return node.id||node.getAttribute('data-rule-id')||node.getAttribute('data-cert-job')||node.getAttribute('data-action')||node.getAttribute('name')||'';}
 // Reconcile changed status text in place. Forms, focused controls and expanded
 // details keep their nodes; polling never replaces the application shell.
@@ -54,10 +91,10 @@ function patchNode(old,next){
 function refreshPageContent(){
  if(!loggedIn||!state)return;
  const content=document.querySelector('#page-content');if(!content){render();return;}
- const next=document.createElement('div');next.innerHTML=pageContent();
+ const next=document.createElement('div');next.innerHTML=pageContentMarkup();
  const old=document.createElement('div'); // only children are reconciled, not the container's layout attributes
  old.innerHTML=next.innerHTML;old.id=content.id;old.className=content.className;
- patchNode(content,old);applyRuleFilters();syncStateBanner();stampForms();
+ patchPageContent(content,old);applyRuleFilters();syncStateBanner();stampForms();
 }
 function stampForms(){for(const form of document.querySelectorAll('.main form')){if(form.dataset.dirty!=='true')form.dataset.revision=state?.configRevision||'';}}
 function attentionPanel(){

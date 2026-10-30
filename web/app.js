@@ -19,6 +19,7 @@ function navigatePage(name,tab=''){const route=name==='rules'?'web':name;const h
 let state, page = pageFromHash(), loggedIn = false, toastTimer, fetching = false, terminal, socket, terminalObserver;
 let renderedRoute='', serverVersion='';
 function pageTransitionChanged(route){const changed=renderedRoute!==''&&renderedRoute!==route;renderedRoute=route;return changed;}
+window.addEventListener('resize',()=>syncTabIndicators());
 let acceptedHash=location.hash;
 window.addEventListener('hashchange',()=>{if(!discardDraft(document.querySelector('.main form[data-dirty="true"]'))){history.replaceState(null,'',acceptedHash);return;}acceptedHash=location.hash;const next=pageFromHash();closeNav(false);if(page!==next)stopTerminal();page=next;panelTab=panelTabFromHash();if(loggedIn){render();window.scrollTo(0,0);}});
 const themeKey = 'linknest-theme';
@@ -101,23 +102,23 @@ function renderAuth(initialized) {
   if(typeof resetUPnPState==='function')resetUPnPState();
   closePicker();
   $('#app').innerHTML=`<div class="auth"><section class="auth-intro"><img src="/icon.svg" alt=""><h1>让网络服务<br>各就其位。</h1><p>栖网 LinkNest · 把域名、入口与远程连接，收进一个轻量的控制台。</p><span class="pill">一个容器 · 自己掌控</span></section><div class="auth-form-wrap"><form class="auth-form" id="auth-form" name="linknest-login" action="/api/${initialized?'login':'setup'}" method="post" autocomplete="on"><h2>${initialized?'欢迎回来':'开始使用栖网'}</h2><p>${initialized?'登录你的网络服务控制台。':'没有默认密码。先使用容器内的初始化口令创建管理员。'}</p>${!initialized?field('token','初始化口令','','在容器 /data/bootstrap.token 中读取'):''}<label class="field" for="auth-username"><span>用户名</span><input id="auth-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="128" placeholder="请输入管理员用户名"></label><label class="field" for="auth-password"><span>${initialized?'管理员密码':'设置管理员密码'}</span><input id="auth-password" name="password" type="password" autocomplete="${initialized?'current-password':'new-password'}" required maxlength="72" ${initialized?'':'minlength="12"'}>${initialized?'':'<small>至少 12 字节，建议使用长随机密码</small>'}</label><p id="auth-error" class="form-error" role="alert"></p><button type="submit" class="button primary">${initialized?'登录控制台':'创建管理员'}</button><div class="auth-footer">管理入口仅建议在受信局域网或 SSH 隧道中使用。<br>${serverVersion?'版本 '+esc(serverVersion)+' · ':''}不会自动开放业务端口</div></form></div></div>`;
-  $('#auth-form').onsubmit=e=>{e.preventDefault();$('#auth-error').textContent='';const data=Object.fromEntries(new FormData(e.currentTarget));const b=$('button',e.currentTarget);busy(b,async()=>{try{if(!initialized)await api('setup','POST',data);const result=await api('login','POST',{username:data.username,password:data.password,code:data.code||''});if(result.twoFactorRequired){if(!$('#auth-code'))$('#auth-error').insertAdjacentHTML('beforebegin','<label class="field" for="auth-code"><span>动态验证码或恢复码</span><input id="auth-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64" required placeholder="输入 Authenticator 的 6 位验证码"><small>丢失手机时可使用一次性恢复码；请确认手机时间自动同步。</small></label>');$('#auth-code').focus();return;}loggedIn=true;state=await api('state');render();}catch(err){$('#auth-error').textContent=err.message;}});};
+  $('#auth-form').onsubmit=e=>{e.preventDefault();$('#auth-error').textContent='';const data=Object.fromEntries(new FormData(e.currentTarget));const b=$('button',e.currentTarget);busy(b,async()=>{try{if(!initialized)await api('setup','POST',data);const result=await api('login','POST',{username:data.username,password:data.password,code:data.code||''});if(result.twoFactorRequired){if(!$('#auth-code'))$('#auth-error').insertAdjacentHTML('beforebegin','<label class="field" for="auth-code"><span>动态验证码或恢复码</span><input id="auth-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64" required placeholder="输入 Authenticator 的 6 位验证码"><small>丢失手机时可使用一次性恢复码；请确认手机时间自动同步。</small></label>');$('#auth-code').focus();return;}loggedIn=true;state=await api('state');lastStateSuccess=Date.now();stateReadError='';render();}catch(err){$('#auth-error').textContent=err.message;}});};
 }
 function render() {
   closePicker();
   if(!loggedIn||!state)return;
   serverVersion=state.version||serverVersion;
   closeNav(false);
-  const animate=pageTransitionChanged(page+(page==='bookmarks'?':'+panelTab:page==='forwards'?':'+forwardTab():''));
+  const animate=pageTransitionChanged(page+(page==='bookmarks'?':'+panelTab:page==='forwards'?':'+forwardTab():page==='settings'?':'+settingsTab():''));
   const labels={overview:['总览','服务、域名与证书，一处掌握。'],rules:['反向代理','主规则管理监听，子规则按域名分流'],forwards:['端口转发','独立管理 TCP / UDP 转发'],ddns:['动态域名','自动跟随公网 IP · 阿里云 DNS'],certs:['证书管理','导入证书，或通过 DNS 验证申请与续期'],bookmarks:['轻面板','常用 Web 服务的私人导航页'],devices:['网络唤醒','向局域网设备发送 Wake-on-LAN 魔术包'],security:['访问过滤','只过滤栖网承接的业务连接，不影响路由器其他服务'],terminal:['Web 终端','通过 SSH 连接可信主机 · 不挂载宿主机 Shell'],settings:['设置','账户、安全开关与数据备份']};
   const [title,sub]=labels[page];
-const shell=document.createElement('template');shell.innerHTML=`<div class="layout" data-view="${esc(page)}"><aside class="sidebar" id="main-sidebar" aria-label="侧栏导航"><button class="drawer-close icon-button" data-action="nav-close" aria-label="关闭菜单">${icon('close')}</button><div class="brand"><img src="/icon.svg" alt=""><div><strong>栖网</strong><small>LINKNEST</small></div></div><nav class="nav" aria-label="主导航">${navs.map(([id,ic,n])=>`${({rules:'网络服务',bookmarks:'常用工具',security:'系统管理'})[id]?'<div class="nav-group">'+({rules:'网络服务',bookmarks:'常用工具',security:'系统管理'})[id]+'</div>':''}<button data-page="${id}" class="${page===id?'active':''}" ${page===id?'aria-current="page"':''}>${icon(ic)}${n}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="version">LinkNest ${esc(serverVersion)}<br>单容器 · 自托管</div><div class="sidebar-tools">${ibtn('切换外观','theme','sun')}${ibtn('退出登录','logout','logout')}</div></div></aside><button class="nav-shade" data-action="nav-close" aria-label="收起菜单" tabindex="-1"></button><main class="main"><div class="mobile-brand"><button class="icon-button nav-toggle" data-action="nav-open" aria-label="打开菜单" aria-expanded="false" aria-controls="main-sidebar"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><img src="/icon.svg" alt="">栖网 LinkNest <button data-action="theme" class="mobile-tool" aria-label="切换外观">${icon('sun')}</button><button data-action="logout" aria-label="退出登录">${icon('logout')}</button></div><header class="top ${animate?'page-transition':''}"><div><h1>${title}</h1><p>${sub}</p></div><div class="actions">${ibtn('刷新状态','refresh','refresh')}${pageAction()}</div></header><div id="state-status" class="state-status" role="status"></div><div id="page-content" class="${animate?'page-transition':''}">${pageContent()}</div></main></div>`;
+const shell=document.createElement('template');shell.innerHTML=`<div class="layout" data-view="${esc(page)}"><aside class="sidebar" id="main-sidebar" aria-label="侧栏导航"><button class="drawer-close icon-button" data-action="nav-close" aria-label="关闭菜单">${icon('close')}</button><div class="brand"><img src="/icon.svg" alt=""><div><strong>栖网</strong><small>LINKNEST</small></div></div><nav class="nav" aria-label="主导航">${navs.map(([id,ic,n])=>`${({rules:'网络服务',bookmarks:'常用工具',security:'系统管理'})[id]?'<div class="nav-group">'+({rules:'网络服务',bookmarks:'常用工具',security:'系统管理'})[id]+'</div>':''}<button data-page="${id}" class="${page===id?'active':''}" ${page===id?'aria-current="page"':''}>${icon(ic)}${n}</button>`).join('')}</nav><div class="sidebar-bottom"><div class="version">LinkNest ${esc(serverVersion)}<br>单容器 · 自托管</div><div class="sidebar-tools">${ibtn('切换外观','theme','sun')}${ibtn('退出登录','logout','logout')}</div></div></aside><button class="nav-shade" data-action="nav-close" aria-label="收起菜单" tabindex="-1"></button><main class="main"><div class="mobile-brand"><button class="icon-button nav-toggle" data-action="nav-open" aria-label="打开菜单" aria-expanded="false" aria-controls="main-sidebar"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><img src="/icon.svg" alt="">栖网 LinkNest <button data-action="theme" class="mobile-tool" aria-label="切换外观">${icon('sun')}</button><button data-action="logout" aria-label="退出登录">${icon('logout')}</button></div><header class="top ${animate?'page-transition':''}"><div><h1>${title}</h1><p>${sub}</p></div><div class="header-tools"><div class="actions">${ibtn('刷新状态','refresh','refresh')}</div><div id="state-status" class="state-status" role="status"></div></div></header><div id="page-content">${pageContentMarkup(animate)}</div></main></div>`;
   const layout=$('#app > .layout');
   if(layout){
     // Keep navigation nodes, focus and scroll position across page changes.
     if(layout.dataset.view===page){
       // Tab changes update content, leaving the title/status shell untouched.
-      $('#page-content',layout).replaceWith($('#page-content',shell.content));
+      patchPageContent($('#page-content',layout),$('#page-content',shell.content),animate);
       patchNode($('.top .actions',layout),$('.top .actions',shell.content));
     }else{
       $('.main',layout).replaceWith($('.main',shell.content));
@@ -129,9 +130,10 @@ const shell=document.createElement('template');shell.innerHTML=`<div class="layo
     }
     $('.version',layout).innerHTML=$('.version',shell.content).innerHTML;
   }else $('#app').replaceChildren(shell.content);
-  syncRefreshControls();stampForms();applyRuleFilters();syncStateBanner();
+  syncRefreshControls();stampForms();applyRuleFilters();syncStateBanner();syncTabIndicators();
+  document.fonts?.ready.then(syncTabIndicators);
 }
-function pageAction(){ if(page==='forwards'&&forwardTab()==='upnp')return ''; const actions={rules:['添加主规则','add:rules'],forwards:['添加转发','add:forwards'],ddns:['添加任务','add:ddns'],certs:['添加证书','issue'],bookmarks:['添加链接','add:bookmarks'],devices:['添加设备','add:devices'],terminal:['添加主机','add:sshHosts']};const a=actions[page];return a?btn(a[0],a[1],'plus','primary'):''; }
+function pageAction(){ if(page==='bookmarks'||page==='forwards'&&forwardTab()==='upnp')return ''; const actions={rules:['添加主规则','add:rules'],forwards:['添加转发','add:forwards'],ddns:['添加任务','add:ddns'],certs:['添加证书','issue'],bookmarks:['添加链接','add:bookmarks'],devices:['添加设备','add:devices'],terminal:['添加主机','add:sshHosts']};const a=actions[page];return a?btn(a[0],a[1],'plus','primary'):''; }
 function ruleRows(items) { return items.map(r=>`<article class="forward-rule" data-rule-id="${esc(r.id)}"><div class="forward-rule-head"><strong>${esc(r.name)}</strong><div class="actions">${ibtn('检查后端','rule-check:'+r.id,'refresh')}${ibtn(r.enabled?'停用':'启用','toggle:'+r.id,'power')}${ibtn('编辑','edit:rules:'+r.id,'edit')}${ibtn('删除','delete:rules:'+r.id,'trash')}</div></div><div class="forward-rule-flow"><div><small>${esc(r.kind==='tcpudp'?'TCP + UDP':r.kind.toUpperCase())} · ${r.forwardMode==='kernel'?'内核加速':'兼容转发'}</small><p>${esc(r.listen)}${copyValue(r.listen)}</p></div><span>→</span><div><small>${r.preserveClientIp?'保留客户端原 IP':'目标地址'}</small><p>${esc(r.kind==='web'?((r.routes||[]).length+' 条子规则'):r.target)}${r.target?copyValue(r.target):''}</p></div></div><div class="rule-status" data-rule-status="${esc(r.id)}">${ruleStatusMarkup(r)}</div></article>`).join(''); }
 
 function row(glyph,title,desc,actions='') { return `<div class="row"><div class="row-left"><div class="tile">${icon(glyph)}</div><div class="row-details"><strong>${esc(title)}</strong><p>${esc(desc)}</p></div></div><div class="row-right">${actions}</div></div>`; }
@@ -190,7 +192,17 @@ async function action(key,button){if(key==='help-expand'){const el=button.closes
   if(kind==='connect'){await connect(a);return;}
   if(kind==='disconnect'){stopTerminal();$('#terminal-panel').hidden=true;return;}
 }
-document.addEventListener('click',e=>{const nav=e.target.closest('[data-page]');const b=e.target.closest('[data-action]');if(nav){busy(nav,()=>action('page:'+nav.dataset.page,nav));}else if(b){busy(b,()=>action(b.dataset.action,b));}});
+document.addEventListener('click',e=>{
+ const nav=e.target.closest('[data-page]'),b=e.target.closest('[data-action]');
+ if(nav){navigatePage(nav.dataset.page);return;}
+ if(!b||b.disabled||b.getAttribute('aria-disabled')==='true')return;
+ const [kind,value]=b.dataset.action.split(':'),tabs={'forward-tab':'forwards','panel-tab':'bookmarks','settings-tab':'settings'};
+ // Navigation is immediate: disabling a tab or inserting a spinner blurs it
+ // and changes the geometry that the selection indicator is moving between.
+ if(tabs[kind]){navigatePage(tabs[kind],value);return;}
+ if(kind==='page'){navigatePage(value);return;}
+ busy(b,()=>action(b.dataset.action,b));
+});
 document.addEventListener('submit',e=>{if(e.target.id==='dns-form'){e.preventDefault();const c=structuredClone(state.config);c.dns=Object.fromEntries(new FormData(e.target));busy($('button',e.target),()=>saveConfig(c,e.target));}if(e.target.id==='security-form'){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const c=structuredClone(state.config);for(const k of ['blacklist','whitelist'])c[k]=d[k].split(/\r?\n/).map(x=>x.trim()).filter(Boolean);busy($('button',e.target),()=>saveConfig(c,e.target));}});
 async function refresh(force=false){
  if(fetching||!loggedIn)return;fetching=true;syncRefreshControls();const epoch=stateEpoch;
@@ -201,4 +213,4 @@ async function refresh(force=false){
 }
 
 let lastPoll=0;setInterval(()=>{const interval=page==='certs'&&(state?.certificateJobs||[]).some(j=>j.state==='running')?2000:10000;if(Date.now()-lastPoll>=interval&&!document.hidden&&!modal.open&&!document.body.classList.contains('nav-open')&&loggedIn&&!socket&&['overview','rules','forwards','ddns','certs','settings'].includes(page)){lastPoll=Date.now();refresh().catch(()=>{});}},2000);
-window.addEventListener('DOMContentLoaded',()=>api('health').then(async h=>{serverVersion=h.version||'';if(h.authenticated){loggedIn=true;state=await api('state');render();}else renderAuth(h.initialized);}).catch(e=>{$('#app').innerHTML=`<div class="loading">${esc(e.message)}，请刷新页面重试。</div>`;}),{once:true});
+window.addEventListener('DOMContentLoaded',()=>api('health').then(async h=>{serverVersion=h.version||'';if(h.authenticated){loggedIn=true;state=await api('state');lastStateSuccess=Date.now();stateReadError='';render();}else renderAuth(h.initialized);}).catch(e=>{$('#app').innerHTML=`<div class="loading">${esc(e.message)}，请刷新页面重试。</div>`;}),{once:true});
