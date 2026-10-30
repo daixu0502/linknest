@@ -15,8 +15,11 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
-GO = "golang:1.26.9-bookworm"
+GO = "golang:1.26.10-bookworm"
 BROWSER = "mcr.microsoft.com/playwright:v1.62.1-noble"
+
+def source_version():
+    return re.search(r'version\s*=\s*"([^"]+)"', (ROOT/"internal/app/config.go").read_text(encoding="utf-8"))[1]
 
 def run(argv, log=None):
     if log:
@@ -56,13 +59,14 @@ def main():
     parser.add_argument("--node-modules", type=Path, required=True)
     parser.add_argument("--debian-mirror", default="http://mirrors.aliyun.com")
     parser.add_argument("--goproxy", default="https://goproxy.cn,direct")
+    parser.add_argument("--proxy", help="HTTP proxy for the vulnerability database")
     args = parser.parse_args()
     if os.name != "nt":
         raise SystemExit("Run this wrapper from the Windows source workspace")
     for name in ["internal/app/reliability120_test.go", "scripts/test-reliability.cjs", "scripts/smoke-release.py", ".tools/kernel-qa.Dockerfile", ".tools/test-forward-netns.py", ".tools/test-deploy120.py"]:
         if not (ROOT/name).is_file():
             raise SystemExit("Missing required local acceptance file: "+name)
-    version = re.search(r'version\s*=\s*"([^"]+)"', (ROOT/"internal/app/config.go").read_text(encoding="utf-8"))[1]
+    version = source_version()
     stage = ROOT/".tools"/("validation-"+version)
     stage.mkdir(parents=True, exist_ok=True)
     gate = stage/"accepted.json"
@@ -78,6 +82,9 @@ def main():
     cache = ["--mount", f"type=bind,source={root}/.tools/cache/go/pkg/mod,target=/go/pkg/mod", "-v", "linknest-go-build:/root/.cache/go-build"]
     print("WSL Go vet / race tests", flush=True)
     run(docker+["run", "--rm", *mount, *cache, "-e", "GOPROXY=off", "-e", "GORACE=atexit_sleep_ms=0", GO, "sh", "-ec", "go vet ./...; go test -race ./..."], stage/"go.log")
+    print("WSL official Go vulnerability check", flush=True)
+    proxy = ["-e", "HTTP_PROXY="+args.proxy, "-e", "HTTPS_PROXY="+args.proxy] if args.proxy else []
+    run(docker+["run", "--rm", *mount, *cache, *proxy, "-e", "GOPROXY="+args.goproxy, GO, "go", "run", "golang.org/x/vuln/cmd/govulncheck@v1.9.0", "./..."], stage/"security.log")
     print("WSL browser acceptance", flush=True)
     run(docker+["run", "--rm", "--network", "none", *mount, "--mount", f"type=bind,source={linux_path(args.node_modules)},target=/modules,readonly", "-e", "NODE_PATH=/modules", "-e", "LINKNEST_QA_OUTPUT=/src/.tools/validation-"+version, BROWSER, "sh", "-ec", 'for f in web/*.js; do node --check "$f"; done; for f in scripts/test-*.mjs scripts/test-*.cjs; do node "$f"; done'], stage/"browser.log")
     run(docker+["run", "--privileged", "--rm", "tonistiigi/binfmt:latest", "--install", "arm64"], stage/"binfmt.log")
@@ -98,6 +105,16 @@ def main():
         exported=stage/("candidate-"+arch+".tar")
         run(docker+["image","save","--platform","linux/"+arch,"-o",linux_path(exported),tag])
         images[arch] = {"tag": tag, "id": archive_config_id(exported), "localID":info["Id"], "bytes": info["Size"]}
+        container = run(docker+["create", "--platform", "linux/"+arch, "--label", "linknest.test=true", tag])
+        binary = stage/("linknest-"+arch)
+        try:
+            run(docker+["cp", container+":/usr/local/bin/linknest", linux_path(binary)])
+        finally:
+            run(docker+["rm", container])
+        build_info = stage/(arch+"-build-info.log")
+        run(docker+["run", "--rm", *mount, GO, "go", "version", "-m", "/src/.tools/validation-"+version+"/linknest-"+arch], build_info)
+        if "go1.26.10" not in build_info.read_text(encoding="utf-8").splitlines()[0]:
+            raise RuntimeError("Candidate Go compiler version mismatch")
     if source_digest() != source:
         raise RuntimeError("Source changed during acceptance; rerun before deploying")
     archive = stage/"candidate-arm64.tar"
@@ -113,7 +130,7 @@ def main():
               "environment": "WSL Docker unix:///var/run/docker.sock", "images": images,
               "archiveSHA256": hashlib.sha256(archive.read_bytes()).hexdigest(),
               "helperID":archive_config_id(helper_archive),"helperLocalID":helper["Id"],"helperArchiveSHA256":hashlib.sha256(helper_archive.read_bytes()).hexdigest(),
-              "checks": ["go-vet", "go-race", "browser", "kernel-dualstack-source-ip", "udp-one-way-idle", "amd64-runtime", "arm64-runtime", "backup-restore", "rollback-helper", "full-image-data-rollback"]}
+              "checks": ["go-vet", "go-race", "govulncheck", "binary-build-info", "browser", "kernel-dualstack-source-ip", "udp-one-way-idle", "amd64-runtime", "arm64-runtime", "backup-restore", "rollback-helper", "full-image-data-rollback"]}
     gate.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
 

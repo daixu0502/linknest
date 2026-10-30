@@ -149,7 +149,7 @@ def main():
     p.add_argument('--known-hosts',type=Path,required=True)
     p.add_argument('--docker',default='/mnt/docker_disk/mi_docker/docker-binaries/docker')
     p.add_argument('--container',default='linknest');p.add_argument('--admin-port',type=int,default=17880)
-    p.add_argument('--stage',type=Path,default=ROOT/'.tools/validation-1.2.0')
+    p.add_argument('--stage',type=Path,default=ROOT/'.tools'/('validation-'+importlib.import_module('release-wsl').source_version()))
     p.add_argument('--preflight',action='store_true');p.add_argument('--rollback',type=Path)
     args=p.parse_args();router=Router(args)
     try:

@@ -6,7 +6,8 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--stage',type=Path,default=ROOT/'.tools/validation-1.2.0')
+    p.add_argument('--stage',type=Path,default=ROOT/'.tools'/('validation-'+importlib.import_module('release-wsl').source_version()))
+    p.add_argument('--registry-proxy',help='HTTP proxy for WSL registry commands, including Buildx')
     p.add_argument('--source-worktree',type=Path,required=True)
     p.add_argument('--deployment',type=Path,required=True)
     args=p.parse_args();release=importlib.import_module('release-wsl');source=args.source_worktree.resolve()
@@ -23,7 +24,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='registry-auth-',dir=ROOT/'.tools') as directory:
         # Only this newly created authentication directory is removed on exit.
         assert Path(directory).resolve().parent==(ROOT/'.tools').resolve()
-        docker=['wsl.exe','--exec','docker','--context','default','--config',release.linux_path(directory)]
+        proxy=['env','HTTP_PROXY='+args.registry_proxy,'HTTPS_PROXY='+args.registry_proxy] if args.registry_proxy else []
+        docker=['wsl.exe','--exec',*proxy,'docker','--context','default','--config',release.linux_path(directory)]
         def command(*values):return release.run(docker+list(values))
         try:
             login=subprocess.run(docker+['login','-u','jacoyyyy','--password-stdin'],input=(token+'\n').encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE)

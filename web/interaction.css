@@ -5,15 +5,10 @@
 .refresh-button.is-loading .icon{animation:spin .8s linear infinite}
 .stat-link{display:block;color:var(--text);text-decoration:none;transition:background .16s ease,border-color .16s ease}
 .stat-link:hover{background:var(--soft);border-color:var(--primary)}
-.overview-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr);grid-template-areas:"services security" "activity activity";gap:22px;align-items:stretch}
-.overview-grid>.panel{margin:0}
-.overview-services{grid-area:services}.overview-security{grid-area:security}.overview-activity{grid-area:activity}
-.overview-events{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px}
-.overview-events>.event{min-width:0}.overview-events>.event p{overflow-wrap:anywhere}
 /* Menus live outside the scrolling form, but inside the modal's top layer.
    Fixed positioning keeps both dialog dimensions and neighbouring fields stable. */
 .picker-menu.picker-floating{position:fixed;right:auto;bottom:auto;margin:0;z-index:100;box-sizing:border-box;max-height:210px;overscroll-behavior:contain;overflow-y:auto;box-shadow:var(--shadow)}
 .page-transition{animation:admin-page-in .18s ease-out both}
 @keyframes admin-page-in{from{opacity:.4;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-@media(max-width:1050px){.overview-grid{grid-template-columns:1fr;grid-template-areas:"services" "security" "activity"}.overview-events{grid-template-columns:1fr}}
+
 @media(prefers-reduced-motion:reduce){.page-transition{animation:none}.refresh-button .icon,.stat-link{transition:none}.refresh-button.is-loading .icon{animation:none}}
