@@ -1,6 +1,6 @@
 /* Shared feedback for every button, including dialogs, tabs and menu options.
    Inset borders never change dimensions; hover is limited to fine pointers. */
-:root{--control-highlight-bg:var(--soft,#eaf0ff);--control-highlight-border:var(--primary,#355cde);--control-highlight-text:var(--primary,#355cde)}
+:root{--control-highlight-bg:color-mix(in srgb,var(--primary,#355cde) 7%,var(--panel,#fff));--control-highlight-border:var(--primary,#355cde);--control-highlight-text:var(--primary,#355cde)}
 html.public-portal{--control-highlight-bg:#0dabcf22;--control-highlight-border:var(--accent);--control-highlight-text:var(--accent)}
 button:not(.nav-shade),summary{transition:background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease}
 .button.primary{--control-highlight-bg:#4a6ddd;--control-highlight-text:#fff;--control-highlight-border:#a8bfff}
@@ -11,10 +11,10 @@ html.public-portal .portal-auth>button:not(.secondary),html.public-portal .wake 
 /* A details header paints its own highlight; use the container's corners. */
 summary{border-radius:8px}
 @media(hover:hover) and (pointer:fine){
- button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):hover,summary:not([aria-disabled=true]):hover{background-color:var(--control-highlight-bg);border-color:var(--control-highlight-border);color:var(--control-highlight-text);box-shadow:inset 0 0 0 1px var(--control-highlight-border);filter:none}
+ button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):hover,summary:not([aria-disabled=true]):hover{background-color:var(--control-highlight-bg);border-color:var(--control-highlight-border);color:var(--control-highlight-text);box-shadow:none;filter:none}
 }
-button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):focus-visible,button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):active,summary:not([aria-disabled=true]):focus-visible,summary:not([aria-disabled=true]):active{background-color:var(--control-highlight-bg);border-color:var(--control-highlight-border);color:var(--control-highlight-text);box-shadow:inset 0 0 0 1px var(--control-highlight-border);filter:none}
-button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):focus-visible,summary:not([aria-disabled=true]):focus-visible{outline:2px solid var(--control-highlight-border);outline-offset:3px}
+button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):focus-visible,button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):active,summary:not([aria-disabled=true]):focus-visible,summary:not([aria-disabled=true]):active{background-color:var(--control-highlight-bg);border-color:var(--control-highlight-border);color:var(--control-highlight-text);box-shadow:none;filter:none}
+button:not(.nav-shade):not(:disabled):not([aria-disabled=true]):focus-visible,summary:not([aria-disabled=true]):focus-visible{outline:2px solid var(--control-highlight-border);outline-offset:-2px}
 /* Keep the keyboard ring inside summaries that touch clipped card edges. */
 summary:not([aria-disabled=true]):focus-visible{outline-offset:-3px}
 @media(prefers-reduced-motion:reduce){button:not(.nav-shade),summary{transition:none}}

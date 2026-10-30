@@ -11,7 +11,31 @@ function markFormError(form,error){
  const field=hints.find(([text,name])=>error.message.includes(text)&&form.elements[name]);
  if(field){const input=form.elements[field[1]];input.setAttribute('aria-invalid','true');input.setAttribute('aria-describedby',box.id);input.closest('details')?.setAttribute('open','');input.focus();}
 }
-function discardDraft(form){return !form?.dataset.dirty||form.dataset.dirty!=='true'||confirm('有尚未保存的修改，确定放弃并离开？');}
+let discardPrompt=null;
+function dismissDiscardPrompt(){
+ const prompt=discardPrompt;if(!prompt)return;
+ discardPrompt=null;prompt.element.close();prompt.element.remove();
+}
+function discardDraft(form,onDiscard){
+ if(form?.dataset.dirty!=='true')return true;
+ if(discardPrompt)return false;
+ const element=document.createElement('dialog'),opener=document.activeElement;
+ element.id='discard-dialog';element.className='discard-dialog';
+ element.setAttribute('aria-labelledby','discard-title');element.setAttribute('aria-describedby','discard-description');
+ element.innerHTML=`<div class="discard-content"><h2 id="discard-title">放弃未保存的修改？</h2><p id="discard-description">当前修改尚未保存。可以继续编辑，或放弃这些修改。</p></div><div class="discard-actions"><button type="button" class="button" data-discard="cancel" autofocus>继续编辑</button><button type="button" class="button danger" data-discard="confirm">放弃修改</button></div>`;
+ const prompt={element,form,epoch:authEpoch};discardPrompt=prompt;
+ const finish=accept=>{
+  if(discardPrompt!==prompt)return;
+  const valid=form.isConnected&&prompt.epoch===authEpoch;
+  dismissDiscardPrompt();
+  if(!valid)return;
+  if(accept)onDiscard?.();else if(opener?.isConnected)opener.focus({preventScroll:true});
+ };
+ element.addEventListener('cancel',e=>{e.preventDefault();finish(false);});
+ element.querySelector('[data-discard=cancel]').onclick=()=>finish(false);
+ element.querySelector('[data-discard=confirm]').onclick=()=>finish(true);
+ document.body.append(element);element.showModal();return false;
+}
 function advanced(title,body,open=false){return `<details class="advanced-fields" ${open?'open':''}><summary>${esc(title)}</summary><div class="content-stack">${body}</div></details>`;}
 function copyValue(value,label='复制地址'){return `<button type="button" class="icon-button copy-value" data-action="copy" data-copy="${esc(value)}" title="${esc(label)}" aria-label="${esc(label)}">${icon('copy')}</button>`;}
 function ruleProblem(r){const s=state.rules.find(x=>x.id===r.id);return r.enabled&&(s?.state==='error'||s?.firewall?.state==='error'||s?.backend?.state==='error');}
@@ -21,7 +45,7 @@ function ruleStatusMarkup(r){
  if(!r.enabled)return pill('已停用');
  return `${pending?pill('等待应用','blue'):''}<div class="rule-state-parts">${part('监听',s?.listener||{state:s?.state,message:s?.message})}${part('防火墙',s?.firewall)}${part('后端',s?.backend)}</div>${s?.state==='error'?`<p class="form-error">${esc(s.message)}</p>`:''}${s?.firewall?.state==='error'?`<p class="form-error">${esc(s.firewall.message)}</p>`:''}${s?.backend?.state==='error'?`<p class="form-error">${esc(s.backend.message)}</p>`:''}${s?.traffic?`<small class="muted">连接 ${s.traffic.active} / ${s.traffic.capacity} · 丢弃 ${s.traffic.dropped}</small>`:''}`;
 }
-function ruleToolbar(kind){const f=ruleFilters[kind];return `<div class="rule-toolbar"><label class="field"><span>搜索规则</span><input type="search" data-rule-search="${kind}" value="${esc(f.query)}" placeholder="名称、域名、监听或目标地址"></label><label class="field"><span>状态</span><select data-rule-filter="${kind}">${[['all','全部'],['enabled','已启用'],['disabled','已停用'],['error','异常']].map(([v,t])=>`<option value="${v}" ${f.status===v?'selected':''}>${t}</option>`).join('')}</select></label><span class="rule-filter-count" role="status"></span></div>`;}
+function ruleToolbar(kind){const f=ruleFilters[kind];return `<div class="rule-toolbar"><label class="field"><span>搜索规则</span><input type="search" data-rule-search="${kind}" value="${esc(f.query)}" placeholder="名称、域名、监听或目标地址"></label><div class="rule-status-filter" data-rule-filter="${kind}">${picker('ruleStatus','状态',f.status,[['all','全部'],['enabled','已启用'],['disabled','已停用'],['error','异常']])}</div><span class="rule-filter-count" role="status"></span></div>`;}
 function applyRuleFilters(){
  const kind=page==='rules'?'rules':page==='forwards'?'forwards':null;if(!kind)return;
  const f=ruleFilters[kind];let shown=0,total=0;
@@ -80,7 +104,7 @@ function patchNode(old,next){
  if(old.nodeType!==next.nodeType||old.nodeName!==next.nodeName){old.replaceWith(next.cloneNode(true));return;}
  if(old.nodeType===3){if(old.textContent!==next.textContent)old.textContent=next.textContent;return;}
  if(old.nodeType!==1||old.isEqualNode(next))return;
- if(old.matches('form,input,textarea,select')||old.contains(document.activeElement)&&old.matches('.picker'))return;
+ if(old.matches('form,input,textarea,select')||old.matches('.picker')&&(old===activePicker?.owner||old.contains(document.activeElement)))return;
  for(const attr of [...old.attributes]){if(attr.name==='open'||attr.name==='data-dirty')continue;if(!next.hasAttribute(attr.name))old.removeAttribute(attr.name);}
  for(const attr of [...next.attributes]){if(attr.name==='open')continue;if(old.getAttribute(attr.name)!==attr.value)old.setAttribute(attr.name,attr.value);}
  const oldChildren=[...old.childNodes],used=new Set();let cursor=old.firstChild;
@@ -97,7 +121,7 @@ function refreshPageContent(){
  const next=document.createElement('div');next.innerHTML=pageContentMarkup();
  const old=document.createElement('div'); // only children are reconciled, not the container's layout attributes
  old.innerHTML=next.innerHTML;old.id=content.id;old.className=content.className;
- patchPageContent(content,old);applyRuleFilters();syncStateBanner();stampForms();
+ patchPageContent(content,old);applyRuleFilters();syncStateBanner();stampForms();positionPicker();
 }
 function stampForms(){for(const form of document.querySelectorAll('.main form')){if(form.dataset.dirty!=='true')form.dataset.revision=state?.configRevision||'';}}
 function attentionPanel(){
@@ -127,7 +151,7 @@ function pathPreview(parent,id){
  if(duplicate){box.textContent='相同域名和路径已有启用规则，请调整路径或停用重复规则。';box.classList.add('error');}else box.classList.remove('error');
 }
 document.addEventListener('input',e=>{const form=e.target.closest('form');if(form&&form.id!=='auth-form'){form.dataset.dirty='true';if(activeDialog?.form===form)activeDialog.dirty=true;}if(e.target.dataset.ruleSearch){ruleFilters[e.target.dataset.ruleSearch].query=e.target.value;applyRuleFilters();}});
-document.addEventListener('change',e=>{if(e.target.dataset.ruleFilter){ruleFilters[e.target.dataset.ruleFilter].status=e.target.value;applyRuleFilters();}const form=e.target.closest('form');if(form&&form.id!=='auth-form'){form.dataset.dirty='true';if(activeDialog?.form===form)activeDialog.dirty=true;}});
+document.addEventListener('change',e=>{const filter=e.target.closest('[data-rule-filter]');if(filter){ruleFilters[filter.dataset.ruleFilter].status=e.target.value;applyRuleFilters();}const form=e.target.closest('form');if(form&&form.id!=='auth-form'){form.dataset.dirty='true';if(activeDialog?.form===form)activeDialog.dirty=true;}});
 window.addEventListener('beforeunload',e=>{if(document.querySelector('form[data-dirty="true"]')){e.preventDefault();e.returnValue='';}});
 
 async function copyText(value){

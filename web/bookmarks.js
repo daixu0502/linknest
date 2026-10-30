@@ -32,8 +32,7 @@ function editBookmark(id,seed={}){
  dialog((id?'编辑':'添加')+'站点',`<div class="form-grid">${field('name','站点名称',old.name)}${picker('group','分组',old.group||'',bookmarkGroups().map(g=>[g,g||'未分组']))}${field('description','描述',old.description,'可选','text',true)}${area('urls','外网链接',(old.urls?.length?old.urls:[old.url||'']).join('\n'),'每行一个 HTTP/HTTPS 地址，首个为主入口')}${area('internalUrls','内网链接',(old.internalUrls||[]).join('\n'),'可选，每行一个地址；内网模式优先使用')}${iconFieldMarkup(old.icon||'',old.iconSourceUrl||'')}${iconPickerMarkup()}${picker('openMode','打开方式',old.sameTab?'same':'new',[['new','新标签页'],['same','当前标签页']])}</div>`+toggle('enabled','启用站点',!old.disabled),async d=>{
   const urls=String(d.urls).split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
   await saveItem('bookmarks',{...old,id:id||uid(),name:d.name.trim(),description:d.description.trim(),group:d.group,url:urls[0]||'',urls,internalUrls:String(d.internalUrls).split(/\r?\n/).map(s=>s.trim()).filter(Boolean),icon:d.icon.trim(),iconSourceUrl:isLocalIcon(d.icon.trim())?(d.iconSourceUrl||'').trim():'',sameTab:d.openMode==='same',disabled:!d.enabled});
- });
- updateIconPreview(document.querySelector('#dialog-form'));
+ },'保存',updateIconPreview);
 }
 async function bookmarkAction(key){
  if(await iconSourceAction(key))return true;
